@@ -1,13 +1,18 @@
-import { IntentAnalysisResult, MessageIntent } from '@/lib/types';
+import { IntentAnalysisResult, MessageIntent, BusinessRule } from '@/lib/types';
 
 // Mock AI analyzer for development without API keys
 export async function analyzeMessageIntent(
-  messageText: string
+  messageText: string,
+  businessRules?: BusinessRule[]
 ): Promise<IntentAnalysisResult> {
   console.log('🤖 Using MOCK AI analyzer (no API key needed)');
 
   // Simple keyword-based intent detection
   const lowerText = messageText.toLowerCase();
+
+  // Detect language based on Finnish keywords
+  const finnishKeywords = ['hinta', 'maksa', 'saatavilla', 'varastossa', 'sijainti', 'osoite', 'missä', 'ongelma', 'valitus', 'kiitos', 'mahtava'];
+  const detectedLanguage: 'fi' | 'en' = finnishKeywords.some(keyword => lowerText.includes(keyword)) ? 'fi' : 'en';
 
   let intent: MessageIntent = 'other';
   let suggestedReplyFi = 'Kiitos viestistäsi! Palaamme asiaan pian.';
@@ -62,6 +67,7 @@ export async function analyzeMessageIntent(
   return {
     intent,
     confidence: 0.75, // Mock confidence
+    detectedLanguage,
     suggestedReplyFi,
     suggestedReplyEn,
   };

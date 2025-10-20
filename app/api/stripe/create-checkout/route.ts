@@ -4,13 +4,24 @@ import { supabaseAdmin } from '@/lib/supabase/server';
 
 export async function POST(request: NextRequest) {
   try {
-    const { userId, priceId } = await request.json();
+    const { userId, planId } = await request.json();
 
-    if (!userId || !priceId) {
+    if (!userId || !planId) {
       return NextResponse.json(
         { error: 'Missing required parameters' },
         { status: 400 }
       );
+    }
+
+    // Get subscription plan details
+    const { data: plan, error: planError } = await supabaseAdmin
+      .from('subscription_plans')
+      .select('*')
+      .eq('id', planId)
+      .single();
+
+    if (planError || !plan || !plan.stripe_price_id) {
+      return NextResponse.json({ error: 'Invalid plan' }, { status: 400 });
     }
 
     // Get user profile
@@ -41,9 +52,9 @@ export async function POST(request: NextRequest) {
     // Create checkout session
     const session = await createCheckoutSession(
       customerId,
-      priceId,
+      plan.stripe_price_id,
       `${process.env.NEXT_PUBLIC_APP_URL}/dashboard?subscription=success`,
-      `${process.env.NEXT_PUBLIC_APP_URL}/dashboard?subscription=cancelled`
+      `${process.env.NEXT_PUBLIC_APP_URL}/pricing?subscription=cancelled`
     );
 
     return NextResponse.json({ sessionId: session.id, url: session.url });

@@ -10,6 +10,10 @@ export interface Profile {
   stripe_customer_id?: string;
   subscription_status: string;
   subscription_tier?: string;
+  subscription_plan_id?: string;
+  trial_ends_at?: string;
+  monthly_message_count: number;
+  last_message_reset: string;
   created_at: string;
   updated_at: string;
 }
@@ -30,6 +34,9 @@ export interface InstagramMessage {
   intent_confidence?: number;
   ai_reply_suggestion_fi?: string;
   ai_reply_suggestion_en?: string;
+  replied_at?: string;
+  replied_by?: 'instagram_auto' | 'manual';
+  reply_text?: string;
   created_at: string;
   updated_at: string;
 }
@@ -73,6 +80,56 @@ export type MessageIntent =
 export interface IntentAnalysisResult {
   intent: MessageIntent;
   confidence: number;
+  detectedLanguage?: 'fi' | 'en';
   suggestedReplyFi: string;
   suggestedReplyEn: string;
+}
+
+export type RuleType = 'price' | 'business_info' | 'inventory' | 'faq' | 'other';
+
+export interface BusinessRule {
+  id: string;
+  user_id: string;
+  rule_type: RuleType;
+  rule_key: string;
+  rule_value: string;
+  rule_metadata?: Record<string, any>;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export type SubscriptionPlanName = 'free' | 'basic' | 'premium' | 'enterprise';
+
+export interface SubscriptionPlan {
+  id: string;
+  name: SubscriptionPlanName;
+  display_name_en: string;
+  display_name_fi: string;
+  price_monthly: number;
+  message_limit: number | null; // null = unlimited
+  stripe_price_id?: string;
+  features: Record<string, any>;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AnalyticsJob {
+  id: string;
+  job_type: 'daily_aggregation' | 'weekly_report' | 'monthly_billing';
+  last_run_at?: string;
+  next_run_at?: string;
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  error_message?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface UsageStats {
+  current_count: number;
+  limit: number | null; // null = unlimited
+  percentage: number;
+  reset_date: string;
+  is_over_limit: boolean;
 }

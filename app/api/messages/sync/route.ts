@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase/server';
 import { getInstagramConversations, getConversationMessages } from '@/lib/instagram/client';
 import { analyzeMessageIntent } from '@/lib/ai';
+import { BusinessRule } from '@/lib/types';
+import { canAnalyzeMessage, incrementMessageCount } from '@/lib/utils/usage';
 
 export async function POST(request: NextRequest) {
   try {
@@ -27,6 +29,29 @@ export async function POST(request: NextRequest) {
 
     console.log('🔄 Starting Instagram message sync for user:', userId);
     console.log('📄 Using Facebook Page ID:', profile.facebook_page_id);
+
+    // Check if user can analyze more messages (usage limits)
+    const usageCheck = await canAnalyzeMessage(userId);
+    if (!usageCheck.allowed) {
+      return NextResponse.json(
+        {
+          error: usageCheck.reason,
+          usage: usageCheck.usageStats,
+          upgrade_required: true,
+        },
+        { status: 403 }
+      );
+    }
+
+    // Fetch user's active business rules
+    const { data: businessRules, error: rulesError } = await supabaseAdmin
+      .from('business_rules')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('is_active', true);
+
+    const activeRules: BusinessRule[] = businessRules || [];
+    console.log(`📋 Loaded ${activeRules.length} active business rules for context`);
 
     // Fetch Instagram conversations
     // IMPORTANT: Use Page ID, not Instagram User ID
@@ -57,8 +82,15 @@ export async function POST(request: NextRequest) {
               .single();
 
             if (!existing) {
-              // Analyze message intent
-              const analysis = await analyzeMessageIntent(msg.message || '');
+              // Check usage limit before analyzing
+              const canAnalyze = await canAnalyzeMessage(userId);
+              if (!canAnalyze.allowed) {
+                console.log('⚠️ Usage limit reached, stopping sync');
+                break; // Stop processing more messages
+              }
+
+              // Analyze message intent with business rules context
+              const analysis = await analyzeMessageIntent(msg.message || '', activeRules);
 
               // Store message
               await supabaseAdmin.from('instagram_messages').insert({
@@ -75,32 +107,17 @@ export async function POST(request: NextRequest) {
                 ai_reply_suggestion_en: analysis.suggestedReplyEn,
               });
 
+              // Increment message count
+              await incrementMessageCount(userId);
+
               syncedCount++;
               analyzedCount++;
             }
           }
         }
 
-        // Update follower insights
-        if (conversationData.participants?.data) {
-          for (const participant of conversationData.participants.data) {
-            const messageCount = conversationData.messages?.data?.filter(
-              (m: any) => m.from.id === participant.id
-            ).length || 0;
-
-            await supabaseAdmin
-              .from('follower_insights')
-              .upsert({
-                user_id: userId,
-                follower_id: participant.id,
-                follower_username: participant.username,
-                follower_name: participant.name,
-                message_count: messageCount,
-                last_message_at: conversationData.messages?.data?.[0]?.created_time,
-                total_engagement_score: messageCount * 10,
-              });
-          }
-        }
+        // NOTE: Follower insights are now updated by daily aggregation job
+        // This improves sync performance and ensures accurate calculations
       } catch (error) {
         console.error('Error processing conversation:', error);
         continue;
