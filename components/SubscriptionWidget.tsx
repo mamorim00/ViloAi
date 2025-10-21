@@ -17,10 +17,16 @@ export default function SubscriptionWidget({ userId }: { userId: string }) {
 
   const loadUsage = async () => {
     try {
-      const response = await fetch('/api/subscriptions/usage');
+      const response = await fetch('/api/subscriptions/usage', {
+        credentials: 'include', // Important: include cookies
+      });
+
       if (response.ok) {
         const data = await response.json();
         setUsage(data);
+      } else {
+        const errorData = await response.json();
+        console.error('Error loading usage:', errorData);
       }
     } catch (error) {
       console.error('Error loading usage:', error);

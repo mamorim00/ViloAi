@@ -189,6 +189,7 @@ export interface Translations {
     currentPlan: string;
     upgrade: string;
     features: string;
+    viewPlans: string;
   };
   subscription: {
     title: string;
@@ -205,6 +206,8 @@ export interface Translations {
     trialExpired: string;
     limitReached: string;
     limitWarning: string;
+    activated: string;
+    activatedMessage: string;
   };
   messageStatus: {
     all: string;
@@ -215,6 +218,25 @@ export interface Translations {
     repliedAuto: string;
     repliedManual: string;
     repliedAt: string;
+  };
+  analytics: {
+    title: string;
+    totalMessages: string;
+    repliedMessages: string;
+    responseRate: string;
+    avgResponseTime: string;
+    engagement: string;
+    active: string;
+    noActivity: string;
+    messagesOverTime: string;
+    intentDistribution: string;
+    intentBreakdown: string;
+    total: string;
+    replied: string;
+    last7Days: string;
+    last30Days: string;
+    last90Days: string;
+    export: string;
   };
 }
 
@@ -408,6 +430,7 @@ export const translations: Record<Language, Translations> = {
       currentPlan: 'Current Plan',
       upgrade: 'Upgrade',
       features: 'Features',
+      viewPlans: 'View Plans',
     },
     subscription: {
       title: 'Subscription & Usage',
@@ -424,6 +447,8 @@ export const translations: Record<Language, Translations> = {
       trialExpired: 'Trial expired',
       limitReached: 'Monthly limit reached. Upgrade to continue analyzing messages.',
       limitWarning: 'You\'re approaching your monthly limit.',
+      activated: 'Subscription Activated!',
+      activatedMessage: 'Your subscription has been successfully activated. You can now start using ViloAi!',
     },
     messageStatus: {
       all: 'All Messages',
@@ -434,6 +459,25 @@ export const translations: Record<Language, Translations> = {
       repliedAuto: 'Replied (Instagram)',
       repliedManual: 'Replied (Manual)',
       repliedAt: 'Replied',
+    },
+    analytics: {
+      title: 'Analytics Dashboard',
+      totalMessages: 'Total Messages',
+      repliedMessages: 'Replied Messages',
+      responseRate: 'response rate',
+      avgResponseTime: 'Avg Response Time',
+      engagement: 'Engagement',
+      active: 'Active',
+      noActivity: 'No activity',
+      messagesOverTime: 'Messages Over Time',
+      intentDistribution: 'Message Intent Distribution',
+      intentBreakdown: 'Intent Breakdown',
+      total: 'Total',
+      replied: 'Replied',
+      last7Days: 'Last 7 days',
+      last30Days: 'Last 30 days',
+      last90Days: 'Last 90 days',
+      export: 'Export CSV',
     },
   },
   fi: {
@@ -625,6 +669,7 @@ export const translations: Record<Language, Translations> = {
       currentPlan: 'Nykyinen paketti',
       upgrade: 'Päivitä',
       features: 'Ominaisuudet',
+      viewPlans: 'Näytä paketit',
     },
     subscription: {
       title: 'Tilaus ja käyttö',
@@ -641,6 +686,8 @@ export const translations: Record<Language, Translations> = {
       trialExpired: 'Kokeilu päättynyt',
       limitReached: 'Kuukauden raja saavutettu. Päivitä jatkaaksesi viestien analysointia.',
       limitWarning: 'Olet lähestymässä kuukauden rajaa.',
+      activated: 'Tilaus aktivoitu!',
+      activatedMessage: 'Tilauksesi on aktivoitu onnistuneesti. Voit nyt aloittaa ViloAi:n käytön!',
     },
     messageStatus: {
       all: 'Kaikki viestit',
@@ -651,6 +698,25 @@ export const translations: Record<Language, Translations> = {
       repliedAuto: 'Vastattu (Instagram)',
       repliedManual: 'Vastattu (Manuaalinen)',
       repliedAt: 'Vastattu',
+    },
+    analytics: {
+      title: 'Analytiikka',
+      totalMessages: 'Viestit yhteensä',
+      repliedMessages: 'Vastatut viestit',
+      responseRate: 'vastausprosentti',
+      avgResponseTime: 'Keskim. vastausaika',
+      engagement: 'Sitoutuminen',
+      active: 'Aktiivinen',
+      noActivity: 'Ei aktiviteettia',
+      messagesOverTime: 'Viestit aikajaksolla',
+      intentDistribution: 'Viestien tarkoitusten jakauma',
+      intentBreakdown: 'Tarkoitusten erittely',
+      total: 'Yhteensä',
+      replied: 'Vastattu',
+      last7Days: 'Viimeiset 7 päivää',
+      last30Days: 'Viimeiset 30 päivää',
+      last90Days: 'Viimeiset 90 päivää',
+      export: 'Vie CSV',
     },
   },
 };

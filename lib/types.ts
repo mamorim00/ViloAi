@@ -14,6 +14,10 @@ export interface Profile {
   trial_ends_at?: string;
   monthly_message_count: number;
   last_message_reset: string;
+  onboarding_completed: boolean;
+  onboarding_step: number;
+  onboarding_started_at?: string;
+  onboarding_completed_at?: string;
   created_at: string;
   updated_at: string;
 }
@@ -37,6 +41,7 @@ export interface InstagramMessage {
   replied_at?: string;
   replied_by?: 'instagram_auto' | 'manual';
   reply_text?: string;
+  response_time_minutes?: number;
   created_at: string;
   updated_at: string;
 }
@@ -49,8 +54,13 @@ export interface MessageAnalytics {
   price_inquiries: number;
   availability_questions: number;
   location_requests: number;
+  general_questions: number;
+  complaints: number;
+  compliments: number;
   other_intents: number;
+  replied_messages: number;
   avg_response_time_minutes?: number;
+  avg_response_time_hours?: number;
   created_at: string;
   updated_at: string;
 }
@@ -132,4 +142,29 @@ export interface UsageStats {
   percentage: number;
   reset_date: string;
   is_over_limit: boolean;
+}
+
+export interface ReplyTemplate {
+  id: string;
+  user_id: string;
+  template_name: string;
+  template_text: string;
+  intent_type?: string;
+  language: 'fi' | 'en' | 'both';
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AnalyticsSummary {
+  totalMessages: number;
+  repliedMessages: number;
+  responseRate: number;
+  avgResponseTimeHours: number;
+  messagesByIntent: Record<MessageIntent, number>;
+  messagesByDate: Array<{
+    date: string;
+    count: number;
+    replied: number;
+  }>;
 }

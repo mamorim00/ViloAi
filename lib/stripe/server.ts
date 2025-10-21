@@ -19,7 +19,8 @@ export async function createCheckoutSession(
   customerId: string,
   priceId: string,
   successUrl: string,
-  cancelUrl: string
+  cancelUrl: string,
+  userId?: string
 ) {
   return await stripe.checkout.sessions.create({
     customer: customerId,
@@ -33,6 +34,9 @@ export async function createCheckoutSession(
     ],
     success_url: successUrl,
     cancel_url: cancelUrl,
+    metadata: userId ? {
+      userId,
+    } : undefined,
   });
 }
 

@@ -79,6 +79,7 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
 
   const customerId = session.customer as string;
   const subscriptionId = session.subscription as string;
+  const userId = session.metadata?.userId;
 
   // Get subscription details
   const subscription = await stripe.subscriptions.retrieve(subscriptionId);
@@ -96,23 +97,40 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
     return;
   }
 
-  // Update user profile
-  const { error } = await supabaseAdmin
-    .from('profiles')
-    .update({
-      stripe_customer_id: customerId,
-      subscription_plan_id: plan.id,
-      subscription_status: subscription.status,
-      subscription_tier: plan.name,
-      trial_ends_at: null, // Clear trial when subscription starts
-      updated_at: new Date().toISOString(),
-    })
-    .eq('stripe_customer_id', customerId);
+  // Update user profile - try by userId first (from metadata), then by customer ID
+  let error;
+  if (userId) {
+    const result = await supabaseAdmin
+      .from('profiles')
+      .update({
+        stripe_customer_id: customerId,
+        subscription_plan_id: plan.id,
+        subscription_status: subscription.status,
+        subscription_tier: plan.name,
+        trial_ends_at: null, // Clear trial when subscription starts
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', userId);
+    error = result.error;
+  } else {
+    const result = await supabaseAdmin
+      .from('profiles')
+      .update({
+        stripe_customer_id: customerId,
+        subscription_plan_id: plan.id,
+        subscription_status: subscription.status,
+        subscription_tier: plan.name,
+        trial_ends_at: null, // Clear trial when subscription starts
+        updated_at: new Date().toISOString(),
+      })
+      .eq('stripe_customer_id', customerId);
+    error = result.error;
+  }
 
   if (error) {
     console.error('Error updating profile after checkout:', error);
   } else {
-    console.log('✅ Subscription activated for customer:', customerId);
+    console.log('✅ Subscription activated for user:', userId || customerId);
   }
 }
 

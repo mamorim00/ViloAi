@@ -54,7 +54,8 @@ export async function POST(request: NextRequest) {
       customerId,
       plan.stripe_price_id,
       `${process.env.NEXT_PUBLIC_APP_URL}/dashboard?subscription=success`,
-      `${process.env.NEXT_PUBLIC_APP_URL}/pricing?subscription=cancelled`
+      `${process.env.NEXT_PUBLIC_APP_URL}/pricing?subscription=cancelled`,
+      userId
     );
 
     return NextResponse.json({ sessionId: session.id, url: session.url });

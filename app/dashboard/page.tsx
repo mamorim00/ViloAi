@@ -20,15 +20,18 @@ import {
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import LanguageToggle from '@/components/LanguageToggle';
 import SubscriptionWidget from '@/components/SubscriptionWidget';
+import OnboardingFlow from '@/components/OnboardingFlow';
+import OnboardingChecklist from '@/components/OnboardingChecklist';
 
 export default function DashboardPage() {
   const router = useRouter();
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [messages, setMessages] = useState<InstagramMessage[]>([]);
   const [followers, setFollowers] = useState<FollowerInsight[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
 
   useEffect(() => {
     checkUser();
@@ -53,6 +56,11 @@ export default function DashboardPage() {
 
     if (profileData) {
       setProfile(profileData);
+
+      // Show onboarding flow if not completed
+      if (!profileData.onboarding_completed) {
+        setShowOnboarding(true);
+      }
     }
   };
 
@@ -175,6 +183,13 @@ export default function DashboardPage() {
                 {profile?.business_name || profile?.full_name || profile?.email}
               </span>
               <Link
+                href="/dashboard/analytics"
+                className="flex items-center space-x-2 text-gray-600 hover:text-gray-900"
+              >
+                <TrendingUp className="h-5 w-5" />
+                <span>{t.analytics?.title || 'Analytics'}</span>
+              </Link>
+              <Link
                 href="/dashboard/settings"
                 className="flex items-center space-x-2 text-gray-600 hover:text-gray-900"
               >
@@ -194,6 +209,38 @@ export default function DashboardPage() {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Subscription Success Message */}
+        {typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('subscription') === 'success' && (
+          <div className="bg-green-50 border border-green-200 rounded-lg p-6 mb-8">
+            <h2 className="text-xl font-bold text-green-900 mb-2">
+              {t.subscription.activated || 'Subscription Activated!'}
+            </h2>
+            <p className="text-green-700">
+              {t.subscription.activatedMessage || 'Your subscription has been successfully activated. You can now start using ViloAi!'}
+            </p>
+          </div>
+        )}
+
+        {/* No Subscription Warning */}
+        {profile && !profile.subscription_plan_id && (
+          <div className="bg-orange-50 border border-orange-200 rounded-lg p-6 mb-8">
+            <h2 className="text-xl font-bold text-orange-900 mb-2">
+              {language === 'fi' ? 'Valitse tilauspaketti' : 'Choose a Subscription Plan'}
+            </h2>
+            <p className="text-orange-700 mb-4">
+              {language === 'fi'
+                ? 'Sinulla ei ole vielä tilaussuunnitelmaa. Valitse sopiva paketti aloittaaksesi.'
+                : 'You don\'t have a subscription plan yet. Choose a plan to get started.'}
+            </p>
+            <Link
+              href="/pricing"
+              className="inline-block bg-orange-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-orange-700"
+            >
+              {t.pricing.viewPlans || 'View Plans'}
+            </Link>
+          </div>
+        )}
+
         {/* Instagram Connection */}
         {!profile?.instagram_connected ? (
           <div className="bg-purple-50 border border-purple-200 rounded-lg p-6 mb-8">
@@ -266,9 +313,19 @@ export default function DashboardPage() {
           />
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Onboarding Checklist - Only show if onboarding not completed */}
+          {profile && !profile.onboarding_completed && (
+            <div className="lg:col-span-1">
+              <OnboardingChecklist
+                profile={profile}
+                onStepClick={() => setShowOnboarding(true)}
+              />
+            </div>
+          )}
+
           {/* Recent Messages */}
-          <div className="bg-white rounded-lg shadow p-6">
+          <div className={`bg-white rounded-lg shadow p-6 ${profile?.onboarding_completed ? 'lg:col-span-1' : 'lg:col-span-1'}`}>
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-xl font-bold text-gray-900">{t.dashboard.recentMessages}</h2>
               <Link href="/dashboard/messages" className="text-purple-600 hover:text-purple-700 text-sm font-medium">
@@ -316,6 +373,18 @@ export default function DashboardPage() {
             </div>
           </div>
         </div>
+
+        {/* Onboarding Flow Modal */}
+        {showOnboarding && profile && (
+          <OnboardingFlow
+            profile={profile}
+            onClose={() => setShowOnboarding(false)}
+            onComplete={() => {
+              setShowOnboarding(false);
+              checkUser(); // Refresh profile data
+            }}
+          />
+        )}
       </main>
     </div>
   );

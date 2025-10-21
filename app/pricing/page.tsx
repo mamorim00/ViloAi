@@ -17,10 +17,15 @@ export default function PricingPage() {
   const [loading, setLoading] = useState(true);
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [creatingCheckout, setCreatingCheckout] = useState<string | null>(null);
+  const [isOnboarding, setIsOnboarding] = useState(false);
 
   useEffect(() => {
     loadPlans();
     checkUser();
+
+    // Check if coming from signup (onboarding flow)
+    const params = new URLSearchParams(window.location.search);
+    setIsOnboarding(params.get('onboarding') === 'true');
   }, []);
 
   const checkUser = async () => {
@@ -48,8 +53,31 @@ export default function PricingPage() {
       return;
     }
 
+    // Handle free plan selection - update profile and redirect
     if (plan.name === 'free') {
-      router.push('/dashboard');
+      setCreatingCheckout(plan.id);
+      try {
+        const { error } = await supabase
+          .from('profiles')
+          .update({
+            subscription_plan_id: plan.id,
+            subscription_status: 'active',
+            subscription_tier: 'free',
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', currentUser.id);
+
+        if (!error) {
+          // Redirect to dashboard, onboarding will auto-advance
+          router.push('/dashboard');
+        } else {
+          console.error('Failed to update free plan:', error);
+        }
+      } catch (error) {
+        console.error('Error selecting free plan:', error);
+      } finally {
+        setCreatingCheckout(null);
+      }
       return;
     }
 
@@ -119,6 +147,20 @@ export default function PricingPage() {
       </nav>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
+        {/* Onboarding Welcome Banner */}
+        {isOnboarding && currentUser && (
+          <div className="bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-lg p-8 mb-12 text-center">
+            <h2 className="text-3xl font-bold mb-3">
+              {language === 'fi' ? 'Tervetuloa ViloAi:hin!' : 'Welcome to ViloAi!'}
+            </h2>
+            <p className="text-xl opacity-90">
+              {language === 'fi'
+                ? 'Valitse sopiva paketti aloittaaksesi Instagram-viestien hallinnan tekoälyllä'
+                : 'Choose your plan to start managing Instagram DMs with AI'}
+            </p>
+          </div>
+        )}
+
         <div className="text-center mb-12">
           <h2 className="text-4xl font-bold text-gray-900 mb-4">{t.pricing.title}</h2>
           <p className="text-xl text-gray-600">{t.pricing.subtitle}</p>

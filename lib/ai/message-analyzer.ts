@@ -101,15 +101,27 @@ Classify the intent as one of:
 - compliment: Positive feedback or compliment
 - other: Anything else
 
-IMPORTANT: Provide the reply suggestion in the SAME LANGUAGE as the incoming message. If the message is in Finnish, reply in Finnish. If the message is in English, reply in English. Use business-specific information when available to provide accurate, personalized responses.
+CRITICAL REPLY GUIDELINES:
+- Answer ONLY what the customer asked - nothing more
+- Do NOT add follow-up questions unless the customer asked a question
+- Do NOT offer additional services, shipping info, or upsells unless specifically asked
+- Do NOT say "Let us know if you need help" or similar phrases
+- Keep replies SHORT and DIRECT (1-2 sentences maximum)
+- Use business-specific information when available
+- Match the SAME LANGUAGE as the incoming message
+
+Examples:
+- Q: "How much are the running shoes?" → A: "The running shoes are €68."
+- Q: "Ovatko lenkkarit saatavilla?" → A: "Kyllä, lenkkarit ovat saatavilla."
+- Q: "Where are you located?" → A: "We're located at [address]."
 
 Respond in JSON format:
 {
   "intent": "intent_type",
   "confidence": 0.95,
   "detectedLanguage": "fi" or "en",
-  "suggestedReplyFi": "Professional Finnish reply (use this if message is in Finnish)",
-  "suggestedReplyEn": "Professional English reply (use this if message is in English)"
+  "suggestedReplyFi": "Direct Finnish reply (use this if message is in Finnish)",
+  "suggestedReplyEn": "Direct English reply (use this if message is in English)"
 }`,
         },
       ],
@@ -167,11 +179,14 @@ export async function generateCustomReply(
 Customer message: "${messageText}"
 Business context: ${context}
 
-Requirements:
-- Be friendly and professional
-- Address the customer's question/concern
+CRITICAL REQUIREMENTS:
+- Answer ONLY what the customer asked - nothing more
+- Do NOT add follow-up questions unless the customer asked a question
+- Do NOT offer additional services or upsells unless specifically asked
+- Do NOT say "Let us know if you need help" or similar closing phrases
+- Be direct and concise (1-2 sentences maximum)
+- Be friendly but brief
 - Use proper ${languageName} language
-- Keep it concise (2-3 sentences)
 - Use appropriate tone for social media
 
 Reply:`,

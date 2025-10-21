@@ -39,19 +39,22 @@ export default function SignupPage() {
       if (error) throw error;
 
       if (data.user) {
-        // Update profile with additional info
+        // Update profile with additional info and initialize onboarding
         await supabase
           .from('profiles')
           .update({
             full_name: fullName,
             business_name: businessName,
+            onboarding_step: 0,
+            onboarding_started_at: new Date().toISOString(),
           })
           .eq('id', data.user.id);
 
         setSuccess(true);
         setTimeout(() => {
+          // Redirect to dashboard where onboarding flow will start
           router.push('/dashboard');
-        }, 2000);
+        }, 1500);
       }
     } catch (err: any) {
       setError(err.message || 'Failed to create account');
