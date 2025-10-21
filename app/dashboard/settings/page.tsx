@@ -4,8 +4,8 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase/client';
-import { BusinessRule, RuleType } from '@/lib/types';
-import { ArrowLeft, Plus, Trash2, Edit2, Save, X } from 'lucide-react';
+import { BusinessRule, RuleType, AutoReplySettings } from '@/lib/types';
+import { ArrowLeft, Plus, Trash2, Edit2, Save, X, Zap, MessageSquare } from 'lucide-react';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import LanguageToggle from '@/components/LanguageToggle';
 
@@ -22,16 +22,24 @@ export default function SettingsPage() {
     rule_value: '',
     is_active: true,
   });
+  const [autoReplySettings, setAutoReplySettings] = useState<AutoReplySettings>({
+    auto_reply_comments_enabled: false,
+    auto_reply_dms_enabled: false,
+  });
+  const [userId, setUserId] = useState<string | null>(null);
 
   useEffect(() => {
     checkAuth();
-    loadRules();
   }, []);
 
   const checkAuth = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
       router.push('/login');
+    } else {
+      setUserId(user.id);
+      loadRules();
+      loadAutoReplySettings(user.id);
     }
   };
 
@@ -152,6 +160,44 @@ export default function SettingsPage() {
     return rules.filter(r => r.rule_type === type);
   };
 
+  const loadAutoReplySettings = async (uid: string) => {
+    try {
+      const response = await fetch(`/api/settings/auto-reply?userId=${uid}`);
+      if (response.ok) {
+        const data = await response.json();
+        setAutoReplySettings(data.settings);
+      }
+    } catch (error) {
+      console.error('Error loading auto-reply settings:', error);
+    }
+  };
+
+  const toggleAutoReplySetting = async (setting: 'comments' | 'dms') => {
+    if (!userId) return;
+
+    setSaving(true);
+    try {
+      const updates = setting === 'comments'
+        ? { auto_reply_comments_enabled: !autoReplySettings.auto_reply_comments_enabled }
+        : { auto_reply_dms_enabled: !autoReplySettings.auto_reply_dms_enabled };
+
+      const response = await fetch('/api/settings/auto-reply', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, ...updates }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setAutoReplySettings(data.settings);
+      }
+    } catch (error) {
+      console.error('Error updating auto-reply settings:', error);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -179,6 +225,96 @@ export default function SettingsPage() {
           <p className="text-gray-600 mt-2">
             {t.settings.subtitle}
           </p>
+        </div>
+
+        {/* Auto-Reply Settings */}
+        <div className="bg-gradient-to-r from-purple-50 to-pink-50 rounded-lg shadow-md p-6 mb-8 border border-purple-100">
+          <div className="flex items-center mb-4">
+            <Zap className="h-6 w-6 text-purple-600 mr-2" />
+            <h2 className="text-xl font-bold text-gray-900">Auto-Reply Settings</h2>
+          </div>
+          <p className="text-gray-600 mb-6">
+            Enable automatic replies for Instagram comments and DMs. Automation rules will auto-reply instantly, while AI-generated replies require your approval.
+          </p>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Comment Auto-Reply Toggle */}
+            <div className="bg-white rounded-lg p-5 border border-gray-200 shadow-sm">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center">
+                  <MessageSquare className="h-5 w-5 text-purple-600 mr-2" />
+                  <h3 className="font-semibold text-gray-900">Comment Auto-Replies</h3>
+                </div>
+                <button
+                  onClick={() => toggleAutoReplySetting('comments')}
+                  disabled={saving}
+                  className="relative inline-flex items-center"
+                >
+                  <div className={`w-12 h-6 rounded-full transition-colors ${
+                    autoReplySettings.auto_reply_comments_enabled ? 'bg-green-500' : 'bg-gray-300'
+                  }`}>
+                    <div className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform ${
+                      autoReplySettings.auto_reply_comments_enabled ? 'translate-x-6' : ''
+                    }`} />
+                  </div>
+                </button>
+              </div>
+              <p className="text-sm text-gray-600">
+                {autoReplySettings.auto_reply_comments_enabled
+                  ? 'Auto-replies are enabled for Instagram comments. Automation rules will fire instantly.'
+                  : 'Enable to automatically respond to Instagram comments based on your automation rules.'}
+              </p>
+              <Link
+                href="/dashboard/automation-rules"
+                className="text-sm text-purple-600 hover:text-purple-700 mt-3 inline-block"
+              >
+                Manage Automation Rules →
+              </Link>
+            </div>
+
+            {/* DM Auto-Reply Toggle */}
+            <div className="bg-white rounded-lg p-5 border border-gray-200 shadow-sm">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center">
+                  <MessageSquare className="h-5 w-5 text-purple-600 mr-2" />
+                  <h3 className="font-semibold text-gray-900">DM Auto-Replies</h3>
+                </div>
+                <button
+                  onClick={() => toggleAutoReplySetting('dms')}
+                  disabled={saving}
+                  className="relative inline-flex items-center"
+                >
+                  <div className={`w-12 h-6 rounded-full transition-colors ${
+                    autoReplySettings.auto_reply_dms_enabled ? 'bg-green-500' : 'bg-gray-300'
+                  }`}>
+                    <div className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform ${
+                      autoReplySettings.auto_reply_dms_enabled ? 'translate-x-6' : ''
+                    }`} />
+                  </div>
+                </button>
+              </div>
+              <p className="text-sm text-gray-600">
+                {autoReplySettings.auto_reply_dms_enabled
+                  ? 'Auto-replies are enabled for Instagram DMs. AI-generated replies await your approval.'
+                  : 'Enable to automatically respond to Instagram direct messages.'}
+              </p>
+              <Link
+                href="/dashboard/auto-reply-queue"
+                className="text-sm text-purple-600 hover:text-purple-700 mt-3 inline-block"
+              >
+                View Approval Queue →
+              </Link>
+            </div>
+          </div>
+
+          {(autoReplySettings.auto_reply_comments_enabled || autoReplySettings.auto_reply_dms_enabled) && (
+            <div className="mt-4 bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <p className="text-sm text-blue-800">
+                <strong>How it works:</strong> Exact-match automation rules trigger instant auto-replies.
+                AI-generated replies are added to the approval queue for you to review before sending.
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Add New Rule Form */}

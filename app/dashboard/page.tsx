@@ -4,38 +4,49 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase/client';
-import { InstagramMessage, FollowerInsight, Profile } from '@/lib/types';
+import { Profile, UnifiedInboxItem } from '@/lib/types';
 import {
   Instagram,
-  MessageSquare,
   TrendingUp,
-  Users,
-  DollarSign,
-  MapPin,
-  Clock,
   LogOut,
   RefreshCw,
   Settings,
+  MessageSquare,
+  Zap,
+  BarChart3,
+  Flame,
+  Clock,
+  CheckCircle,
+  ArrowRight,
+  Trash2,
 } from 'lucide-react';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import LanguageToggle from '@/components/LanguageToggle';
 import SubscriptionWidget from '@/components/SubscriptionWidget';
 import OnboardingFlow from '@/components/OnboardingFlow';
 import OnboardingChecklist from '@/components/OnboardingChecklist';
+import UnifiedInboxItemComponent from '@/components/UnifiedInboxItem';
 
 export default function DashboardPage() {
   const router = useRouter();
   const { t, language } = useLanguage();
   const [profile, setProfile] = useState<Profile | null>(null);
-  const [messages, setMessages] = useState<InstagramMessage[]>([]);
-  const [followers, setFollowers] = useState<FollowerInsight[]>([]);
+  const [inboxItems, setInboxItems] = useState<UnifiedInboxItem[]>([]);
+  const [stats, setStats] = useState({
+    total: 0,
+    leads: 0,
+    pending_approval: 0,
+    unanswered: 0,
+    answered: 0,
+  });
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [archiving, setArchiving] = useState(false);
 
   useEffect(() => {
     checkUser();
-    loadDashboardData();
+    loadInbox();
   }, []);
 
   const checkUser = async () => {
@@ -64,38 +75,27 @@ export default function DashboardPage() {
     }
   };
 
-  const loadDashboardData = async () => {
+  const loadInbox = async () => {
     const {
       data: { user },
     } = await supabase.auth.getUser();
 
     if (!user) return;
 
-    // Load recent messages
-    const { data: messagesData } = await supabase
-      .from('instagram_messages')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('timestamp', { ascending: false })
-      .limit(10);
-
-    if (messagesData) {
-      setMessages(messagesData);
+    setLoading(true);
+    try {
+      const response = await fetch(`/api/unified-inbox?userId=${user.id}&filter=all`);
+      if (response.ok) {
+        const data = await response.json();
+        // Show only first 10 items on dashboard
+        setInboxItems((data.items || []).slice(0, 10));
+        setStats(data.stats || { total: 0, leads: 0, pending_approval: 0, unanswered: 0, answered: 0 });
+      }
+    } catch (error) {
+      console.error('Error loading inbox:', error);
+    } finally {
+      setLoading(false);
     }
-
-    // Load top followers
-    const { data: followersData } = await supabase
-      .from('follower_insights')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('total_engagement_score', { ascending: false })
-      .limit(5);
-
-    if (followersData) {
-      setFollowers(followersData);
-    }
-
-    setLoading(false);
   };
 
   const handleSync = async () => {
@@ -103,19 +103,132 @@ export default function DashboardPage() {
 
     setSyncing(true);
     try {
-      const response = await fetch('/api/messages/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: profile.id }),
-      });
+      // Sync both DMs and comments
+      const [dmResponse, commentResponse] = await Promise.all([
+        fetch('/api/messages/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: profile.id }),
+        }),
+        fetch('/api/comments/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: profile.id }),
+        }),
+      ]);
 
-      if (response.ok) {
-        await loadDashboardData();
+      if (dmResponse.ok && commentResponse.ok) {
+        await loadInbox();
       }
     } catch (error) {
       console.error('Sync failed:', error);
     } finally {
       setSyncing(false);
+    }
+  };
+
+  const handleClearMessages = async () => {
+    if (!profile) return;
+
+    const confirmed = confirm(
+      'Are you sure you want to clear all old messages? This will delete all DMs, comments, and pending approvals. This action cannot be undone.'
+    );
+
+    if (!confirmed) return;
+
+    setArchiving(true);
+    try {
+      const response = await fetch(`/api/messages/archive?userId=${profile.id}`, {
+        method: 'DELETE',
+      });
+
+      if (response.ok) {
+        await loadInbox();
+        alert('All messages cleared successfully! You can now sync to start fresh.');
+      }
+    } catch (error) {
+      console.error('Error clearing messages:', error);
+      alert('Failed to clear messages. Please try again.');
+    } finally {
+      setArchiving(false);
+    }
+  };
+
+  const handleApprove = async (queueItemId: string, editedReply?: string) => {
+    if (!profile) return;
+
+    try {
+      const response = await fetch('/api/auto-reply/approve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          queueItemId,
+          userId: profile.id,
+          editedReply,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to approve reply');
+      }
+    } catch (error) {
+      console.error('Error approving reply:', error);
+      throw error;
+    }
+  };
+
+  const handleReject = async (queueItemId: string) => {
+    if (!profile) return;
+
+    try {
+      const response = await fetch('/api/auto-reply/reject', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          queueItemId,
+          userId: profile.id,
+          reason: 'Rejected from dashboard',
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to reject reply');
+      }
+    } catch (error) {
+      console.error('Error rejecting reply:', error);
+      throw error;
+    }
+  };
+
+  const handleQuickReply = async (
+    itemType: string,
+    sourceId: string,
+    replyText: string,
+    conversationId?: string,
+    senderId?: string
+  ) => {
+    if (!profile) return;
+
+    try {
+      const response = await fetch('/api/quick-reply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: profile.id,
+          itemType,
+          sourceId,
+          replyText,
+          conversationId,
+          senderId,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to send quick reply');
+      }
+    } catch (error) {
+      console.error('Error sending quick reply:', error);
+      throw error;
     }
   };
 
@@ -148,18 +261,11 @@ export default function DashboardPage() {
       .eq('id', user.id);
 
     if (!error) {
-      setProfile((prev) => prev ? { ...prev, instagram_connected: false } : null);
+      setProfile((prev) => (prev ? { ...prev, instagram_connected: false } : null));
     }
   };
 
-  const stats = {
-    totalMessages: messages.length,
-    priceInquiries: messages.filter((m) => m.intent === 'price_inquiry').length,
-    availabilityQuestions: messages.filter((m) => m.intent === 'availability').length,
-    locationRequests: messages.filter((m) => m.intent === 'location').length,
-  };
-
-  if (loading) {
+  if (loading && !inboxItems.length) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-gray-600">{t.common.loading}</div>
@@ -183,13 +289,6 @@ export default function DashboardPage() {
                 {profile?.business_name || profile?.full_name || profile?.email}
               </span>
               <Link
-                href="/dashboard/analytics"
-                className="flex items-center space-x-2 text-gray-600 hover:text-gray-900"
-              >
-                <TrendingUp className="h-5 w-5" />
-                <span>{t.analytics?.title || 'Analytics'}</span>
-              </Link>
-              <Link
                 href="/dashboard/settings"
                 className="flex items-center space-x-2 text-gray-600 hover:text-gray-900"
               >
@@ -210,16 +309,18 @@ export default function DashboardPage() {
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Subscription Success Message */}
-        {typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('subscription') === 'success' && (
-          <div className="bg-green-50 border border-green-200 rounded-lg p-6 mb-8">
-            <h2 className="text-xl font-bold text-green-900 mb-2">
-              {t.subscription.activated || 'Subscription Activated!'}
-            </h2>
-            <p className="text-green-700">
-              {t.subscription.activatedMessage || 'Your subscription has been successfully activated. You can now start using ViloAi!'}
-            </p>
-          </div>
-        )}
+        {typeof window !== 'undefined' &&
+          new URLSearchParams(window.location.search).get('subscription') === 'success' && (
+            <div className="bg-green-50 border border-green-200 rounded-lg p-6 mb-8">
+              <h2 className="text-xl font-bold text-green-900 mb-2">
+                {t.subscription.activated || 'Subscription Activated!'}
+              </h2>
+              <p className="text-green-700">
+                {t.subscription.activatedMessage ||
+                  'Your subscription has been successfully activated. You can now start using ViloAi!'}
+              </p>
+            </div>
+          )}
 
         {/* No Subscription Warning */}
         {profile && !profile.subscription_plan_id && (
@@ -230,7 +331,7 @@ export default function DashboardPage() {
             <p className="text-orange-700 mb-4">
               {language === 'fi'
                 ? 'Sinulla ei ole vielä tilaussuunnitelmaa. Valitse sopiva paketti aloittaaksesi.'
-                : 'You don\'t have a subscription plan yet. Choose a plan to get started.'}
+                : "You don't have a subscription plan yet. Choose a plan to get started."}
             </p>
             <Link
               href="/pricing"
@@ -244,12 +345,8 @@ export default function DashboardPage() {
         {/* Instagram Connection */}
         {!profile?.instagram_connected ? (
           <div className="bg-purple-50 border border-purple-200 rounded-lg p-6 mb-8">
-            <h2 className="text-xl font-bold text-purple-900 mb-2">
-              {t.dashboard.connectInstagram.title}
-            </h2>
-            <p className="text-purple-700 mb-4">
-              {t.dashboard.connectInstagram.description}
-            </p>
+            <h2 className="text-xl font-bold text-purple-900 mb-2">{t.dashboard.connectInstagram.title}</h2>
+            <p className="text-purple-700 mb-4">{t.dashboard.connectInstagram.description}</p>
             <button
               onClick={handleConnectInstagram}
               className="bg-purple-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-purple-700"
@@ -261,12 +358,8 @@ export default function DashboardPage() {
           <div className="bg-green-50 border border-green-200 rounded-lg p-6 mb-8">
             <div className="flex justify-between items-center">
               <div>
-                <h2 className="text-xl font-bold text-green-900 mb-2">
-                  {t.dashboard.connected.title}
-                </h2>
-                <p className="text-green-700">
-                  {t.dashboard.connected.description}
-                </p>
+                <h2 className="text-xl font-bold text-green-900 mb-2">{t.dashboard.connected.title}</h2>
+                <p className="text-green-700">{t.dashboard.connected.description}</p>
               </div>
               <button
                 onClick={handleDisconnectInstagram}
@@ -285,93 +378,133 @@ export default function DashboardPage() {
           </div>
         )}
 
+        {/* Onboarding Checklist - Only show if onboarding not completed */}
+        {profile && !profile.onboarding_completed && (
+          <div className="mb-8">
+            <OnboardingChecklist profile={profile} onStepClick={() => setShowOnboarding(true)} />
+          </div>
+        )}
+
+        {/* Quick Actions & Sync */}
+        <div className="bg-white rounded-lg shadow-sm p-6 mb-8">
+          <div className="flex items-center justify-between flex-wrap gap-4">
+            <h2 className="text-xl font-bold text-gray-900">Quick Actions</h2>
+            <div className="flex items-center space-x-3">
+              {profile?.instagram_connected && (
+                <>
+                  <button
+                    onClick={handleClearMessages}
+                    disabled={archiving}
+                    className="flex items-center space-x-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    <span>{archiving ? 'Clearing...' : 'Clear All Messages'}</span>
+                  </button>
+                  <button
+                    onClick={handleSync}
+                    disabled={syncing}
+                    className="flex items-center space-x-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <RefreshCw className={`h-5 w-5 ${syncing ? 'animate-spin' : ''}`} />
+                    <span>{syncing ? 'Syncing...' : 'Sync Messages'}</span>
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+
         {/* Stats Overview */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-8">
           <StatCard
-            icon={<MessageSquare className="h-8 w-8 text-blue-600" />}
-            title={t.dashboard.stats.totalMessages}
-            value={stats.totalMessages}
+            icon={<MessageSquare className="h-6 w-6 text-blue-600" />}
+            title="Total Messages"
+            value={stats.total}
             bgColor="bg-blue-50"
           />
+          <StatCard icon={<Flame className="h-6 w-6 text-red-600" />} title="Leads" value={stats.leads} bgColor="bg-red-50" />
           <StatCard
-            icon={<DollarSign className="h-8 w-8 text-green-600" />}
-            title={t.dashboard.stats.priceInquiries}
-            value={stats.priceInquiries}
-            bgColor="bg-green-50"
-          />
-          <StatCard
-            icon={<Clock className="h-8 w-8 text-orange-600" />}
-            title={t.dashboard.stats.availability}
-            value={stats.availabilityQuestions}
+            icon={<Clock className="h-6 w-6 text-orange-600" />}
+            title="Pending Approval"
+            value={stats.pending_approval}
             bgColor="bg-orange-50"
           />
           <StatCard
-            icon={<MapPin className="h-8 w-8 text-red-600" />}
-            title={t.dashboard.stats.locationRequests}
-            value={stats.locationRequests}
-            bgColor="bg-red-50"
+            icon={<MessageSquare className="h-6 w-6 text-purple-600" />}
+            title="Unanswered"
+            value={stats.unanswered}
+            bgColor="bg-purple-50"
+          />
+          <StatCard
+            icon={<CheckCircle className="h-6 w-6 text-green-600" />}
+            title="Answered"
+            value={stats.answered}
+            bgColor="bg-green-50"
           />
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Onboarding Checklist - Only show if onboarding not completed */}
-          {profile && !profile.onboarding_completed && (
-            <div className="lg:col-span-1">
-              <OnboardingChecklist
-                profile={profile}
-                onStepClick={() => setShowOnboarding(true)}
-              />
+        {/* Navigation Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+          <NavCard
+            href="/dashboard/messages"
+            icon={<MessageSquare className="h-12 w-12 text-purple-600" />}
+            title="Messages"
+            description="View and manage all Instagram DMs and comments with AI-powered replies"
+            badge={stats.unanswered > 0 ? `${stats.unanswered} unanswered` : undefined}
+          />
+          <NavCard
+            href="/dashboard/automation-rules"
+            icon={<Zap className="h-12 w-12 text-orange-600" />}
+            title="Automations"
+            description="Manage automation rules and view auto-reply statistics"
+            badge="View rules"
+          />
+          <NavCard
+            href="/dashboard/analytics"
+            icon={<BarChart3 className="h-12 w-12 text-blue-600" />}
+            title="Analytics"
+            description="Track engagement metrics, response times, and auto-reply performance"
+            badge="View insights"
+          />
+        </div>
+
+        {/* Recent Activity Preview */}
+        <div className="bg-white rounded-lg shadow-sm p-6">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-xl font-bold text-gray-900">Recent Activity</h2>
+            <Link
+              href="/dashboard/messages"
+              className="flex items-center space-x-1 text-purple-600 hover:text-purple-700 font-medium"
+            >
+              <span>View All</span>
+              <ArrowRight className="h-4 w-4" />
+            </Link>
+          </div>
+
+          {inboxItems.length === 0 ? (
+            <div className="text-center py-12">
+              <MessageSquare className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">No messages yet</h3>
+              <p className="text-gray-500 mb-6">
+                {profile?.instagram_connected
+                  ? 'Click "Sync Messages" to fetch your Instagram DMs and comments'
+                  : 'Connect your Instagram account to start receiving messages'}
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {inboxItems.map((item) => (
+                <UnifiedInboxItemComponent
+                  key={item.id}
+                  item={item}
+                  onApprove={handleApprove}
+                  onReject={handleReject}
+                  onQuickReply={handleQuickReply}
+                  onRefresh={loadInbox}
+                />
+              ))}
             </div>
           )}
-
-          {/* Recent Messages */}
-          <div className={`bg-white rounded-lg shadow p-6 ${profile?.onboarding_completed ? 'lg:col-span-1' : 'lg:col-span-1'}`}>
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-bold text-gray-900">{t.dashboard.recentMessages}</h2>
-              <Link href="/dashboard/messages" className="text-purple-600 hover:text-purple-700 text-sm font-medium">
-                {t.dashboard.viewAll}
-              </Link>
-            </div>
-            <div className="flex justify-between items-center mb-4">
-              <div></div>
-              {profile?.instagram_connected && (
-                <button
-                  onClick={handleSync}
-                  disabled={syncing}
-                  className="flex items-center space-x-2 text-purple-600 hover:text-purple-700 disabled:opacity-50"
-                >
-                  <RefreshCw className={`h-5 w-5 ${syncing ? 'animate-spin' : ''}`} />
-                  <span>{syncing ? t.dashboard.syncing : t.dashboard.sync}</span>
-                </button>
-              )}
-            </div>
-            <div className="space-y-4">
-              {messages.length === 0 ? (
-                <p className="text-gray-500 text-center py-8">{t.dashboard.noMessages}</p>
-              ) : (
-                messages.map((message) => (
-                  <MessageCard key={message.id} message={message} />
-                ))
-              )}
-            </div>
-          </div>
-
-          {/* Top Followers */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center">
-              <Users className="h-6 w-6 mr-2" />
-              {t.dashboard.topFollowers}
-            </h2>
-            <div className="space-y-4">
-              {followers.length === 0 ? (
-                <p className="text-gray-500 text-center py-8">{t.dashboard.noFollowerData}</p>
-              ) : (
-                followers.map((follower, index) => (
-                  <FollowerCard key={follower.id} follower={follower} rank={index + 1} />
-                ))
-              )}
-            </div>
-          </div>
         </div>
 
         {/* Onboarding Flow Modal */}
@@ -402,11 +535,11 @@ function StatCard({
   bgColor: string;
 }) {
   return (
-    <div className={`${bgColor} rounded-lg p-6`}>
+    <div className={`${bgColor} rounded-lg p-4`}>
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-sm font-medium text-gray-600">{title}</p>
-          <p className="text-3xl font-bold text-gray-900 mt-2">{value}</p>
+          <p className="text-xs font-medium text-gray-600">{title}</p>
+          <p className="text-2xl font-bold text-gray-900 mt-1">{value}</p>
         </div>
         <div>{icon}</div>
       </div>
@@ -414,85 +547,36 @@ function StatCard({
   );
 }
 
-function MessageCard({ message }: { message: InstagramMessage }) {
-  const { t } = useLanguage();
-  const intentColors: Record<string, string> = {
-    price_inquiry: 'bg-green-100 text-green-800',
-    availability: 'bg-orange-100 text-orange-800',
-    location: 'bg-red-100 text-red-800',
-    general_question: 'bg-blue-100 text-blue-800',
-    other: 'bg-gray-100 text-gray-800',
-  };
-
-  // Detect language: check if message text contains Finnish characters or common Finnish words
-  const detectLanguage = (text: string): 'fi' | 'en' => {
-    if (!text) return 'en';
-    const lowerText = text.toLowerCase();
-    const finnishKeywords = ['hinta', 'mikä', 'mitä', 'missä', 'kuinka', 'onko', 'voiko', 'voinko', 'kiitos', 'ole', 'saatavilla', 'maksa'];
-    const hasFinnishKeywords = finnishKeywords.some(keyword => lowerText.includes(keyword));
-    // Check for Finnish characters ä, ö
-    const hasFinnishChars = /[äöå]/i.test(text);
-    return (hasFinnishKeywords || hasFinnishChars) ? 'fi' : 'en';
-  };
-
-  const detectedLang = detectLanguage(message.message_text || '');
-  const aiSuggestion = detectedLang === 'fi' ? message.ai_reply_suggestion_fi : message.ai_reply_suggestion_en;
-  const languageLabel = detectedLang === 'fi' ? 'FI' : 'EN';
-
-  // Get translated intent label
-  const intentLabel = message.intent ? t.intents[message.intent as keyof typeof t.intents] : '';
-
+function NavCard({
+  href,
+  icon,
+  title,
+  description,
+  badge,
+}: {
+  href: string;
+  icon: React.ReactNode;
+  title: string;
+  description: string;
+  badge?: string;
+}) {
   return (
-    <div className="border border-gray-200 rounded-lg p-4">
-      <div className="flex justify-between items-start mb-2">
-        <div>
-          <p className="font-semibold text-gray-900">{message.sender_name || message.sender_username}</p>
-          <p className="text-sm text-gray-500">
-            {new Date(message.timestamp).toLocaleString()}
-          </p>
-        </div>
-        {message.intent && (
-          <span
-            className={`px-2 py-1 rounded text-xs font-medium ${
-              intentColors[message.intent] || intentColors.other
-            }`}
-          >
-            {intentLabel}
-          </span>
+    <Link
+      href={href}
+      className="block bg-white rounded-lg shadow-sm border border-gray-200 p-6 hover:shadow-md hover:border-purple-300 transition group"
+    >
+      <div className="flex items-start justify-between mb-4">
+        <div className="p-3 bg-gray-50 rounded-lg group-hover:bg-purple-50 transition">{icon}</div>
+        {badge && (
+          <span className="px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-xs font-medium">{badge}</span>
         )}
       </div>
-      <p className="text-gray-700 mb-2">{message.message_text}</p>
-      {aiSuggestion && (
-        <div className="mt-3 pt-3 border-t border-gray-100">
-          <p className="text-xs font-medium text-gray-600 mb-1">{t.dashboard.aiSuggestion} ({languageLabel}):</p>
-          <p className="text-sm text-gray-700">{aiSuggestion}</p>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function FollowerCard({ follower, rank }: { follower: FollowerInsight; rank: number }) {
-  const { t } = useLanguage();
-  return (
-    <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-      <div className="flex items-center space-x-3">
-        <div className="flex-shrink-0 w-8 h-8 bg-purple-600 text-white rounded-full flex items-center justify-center font-bold">
-          {rank}
-        </div>
-        <div>
-          <p className="font-semibold text-gray-900">
-            {follower.follower_name || follower.follower_username}
-          </p>
-          <p className="text-sm text-gray-500">{follower.message_count} {t.dashboard.messages}</p>
-        </div>
+      <h3 className="text-lg font-bold text-gray-900 mb-2 group-hover:text-purple-600 transition">{title}</h3>
+      <p className="text-sm text-gray-600">{description}</p>
+      <div className="flex items-center justify-end mt-4 text-purple-600 group-hover:text-purple-700 font-medium">
+        <span className="text-sm">Open</span>
+        <ArrowRight className="h-4 w-4 ml-1 group-hover:translate-x-1 transition" />
       </div>
-      <div className="flex items-center space-x-2">
-        <TrendingUp className="h-5 w-5 text-green-600" />
-        <span className="text-sm font-medium text-gray-700">
-          {follower.total_engagement_score}
-        </span>
-      </div>
-    </div>
+    </Link>
   );
 }

@@ -5,6 +5,7 @@ const META_API_BASE = `https://graph.facebook.com/${META_API_VERSION}`;
 
 export interface InstagramConversation {
   id: string;
+  updated_time: string;
   participants: {
     data: Array<{
       id: string;
@@ -12,7 +13,7 @@ export interface InstagramConversation {
       name: string;
     }>;
   };
-  messages: {
+  messages?: {
     data: Array<{
       id: string;
       from: {
@@ -147,11 +148,47 @@ export async function getConversationMessages(
     console.log('✉️ Messages in conversation:', response.data.data?.length || 0);
 
     return {
+      conversationId,
       messages: response.data,
       participants: conversationResponse.data.participants,
     };
   } catch (error: any) {
     console.error('❌ Error fetching conversation messages:', error.response?.data || error.message);
+    throw error;
+  }
+}
+
+// Get conversations updated after a specific timestamp (for incremental sync)
+export async function getInstagramConversationsSince(
+  pageId: string,
+  accessToken: string,
+  sinceTimestamp?: string
+) {
+  try {
+    console.log('🔍 Fetching Instagram conversations since:', sinceTimestamp || 'beginning');
+
+    const params: any = {
+      platform: 'instagram',
+      access_token: accessToken,
+      fields: 'id,updated_time,participants',
+    };
+
+    // Only fetch conversations updated since last sync
+    if (sinceTimestamp) {
+      // Convert ISO timestamp to Unix timestamp for Instagram API
+      const unixTimestamp = Math.floor(new Date(sinceTimestamp).getTime() / 1000);
+      params.since = unixTimestamp;
+    }
+
+    const response = await axios.get(
+      `${META_API_BASE}/${pageId}/conversations`,
+      { params }
+    );
+
+    console.log('📬 Conversations found:', response.data.data?.length || 0);
+    return response.data.data || [];
+  } catch (error: any) {
+    console.error('❌ Error fetching Instagram conversations:', error.response?.data || error.message);
     throw error;
   }
 }
