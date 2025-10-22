@@ -39,6 +39,7 @@ export interface InstagramMessage {
   media_url?: string;
   timestamp: string;
   is_read: boolean;
+  is_archived?: boolean; // True if message has been answered and archived
   intent?: string;
   intent_confidence?: number;
   ai_reply_suggestion_fi?: string;
@@ -92,6 +93,7 @@ export interface FollowerInsight {
 export type MessageIntent =
   | 'price_inquiry'
   | 'availability'
+  | 'service_inquiry'
   | 'location'
   | 'general_question'
   | 'complaint'
@@ -216,6 +218,7 @@ export interface InstagramComment {
   comment_text?: string;
   timestamp: string;
   is_read: boolean;
+  is_archived?: boolean; // True if comment has been answered and archived
   intent?: string;
   intent_confidence?: number;
   is_question: boolean;

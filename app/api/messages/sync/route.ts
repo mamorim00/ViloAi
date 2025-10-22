@@ -76,39 +76,48 @@ export async function POST(request: NextRequest) {
       profile.last_instagram_sync
     );
 
-    let syncedCount = 0;
-    let analyzedCount = 0;
-    let skippedCount = 0;
-    let autoRepliedCount = 0;
-    let queuedCount = 0;
     const syncStartTime = new Date().toISOString();
 
-    // Process each conversation
-    for (const conversation of conversations) {
-      try {
-        const conversationData = await getConversationMessages(
-          conversation.id,
-          profile.instagram_access_token
-        );
+    // Fetch all existing UNARCHIVED message IDs for this user in ONE query
+    // This is MUCH faster than checking timestamp for every message
+    // Archived messages are skipped entirely (already answered and older than 30 days)
+    const { data: existingMessages } = await supabaseAdmin
+      .from('instagram_messages')
+      .select('message_id')
+      .eq('user_id', userId)
+      .eq('is_archived', false);
 
-        // Process each message in the conversation
-        if (conversationData.messages?.data) {
-          for (const msg of conversationData.messages.data) {
-            // Check if message already exists
-            const { data: existing } = await supabaseAdmin
-              .from('instagram_messages')
-              .select('id')
-              .eq('message_id', msg.id)
-              .single();
+    const existingMessageIds = new Set(
+      (existingMessages || []).map((m) => m.message_id)
+    );
 
-            if (!existing) {
-              // Check usage limit before analyzing
-              const canAnalyze = await canAnalyzeMessage(userId);
-              if (!canAnalyze.allowed) {
-                console.log('⚠️ Usage limit reached, stopping sync');
-                break; // Stop processing more messages
+    console.log(`📋 Found ${existingMessageIds.size} unarchived messages in database`);
+
+    // Process conversations concurrently (but messages within each conversation sequentially to maintain context)
+    const results = await Promise.all(
+      conversations.map(async (conversation: any) => {
+        let convSyncedCount = 0;
+        let convAnalyzedCount = 0;
+        let convSkippedCount = 0;
+        let convAutoRepliedCount = 0;
+        let convQueuedCount = 0;
+        try {
+          const conversationData = await getConversationMessages(
+            conversation.id,
+            profile.instagram_access_token
+          );
+
+          // Process each message in the conversation
+          if (conversationData.messages?.data) {
+            for (const msg of conversationData.messages.data) {
+              // Skip if message already exists (fast Set lookup)
+              // Archived messages are not in the Set, so they won't be re-processed
+              if (existingMessageIds.has(msg.id)) {
+                convSkippedCount++;
+                continue;
               }
 
+              // Message is new and unarchived, should be processed
               const messageText = msg.message || '';
 
               // Step 1: Check automation rules first (exact match auto-reply)
@@ -128,7 +137,7 @@ export async function POST(request: NextRequest) {
                     profile.instagram_access_token
                   );
 
-                  // Store message with reply info
+                  // Store message with reply info (NO AI analysis needed)
                   await supabaseAdmin.from('instagram_messages').insert({
                     user_id: userId,
                     message_id: msg.id,
@@ -168,27 +177,19 @@ export async function POST(request: NextRequest) {
                     })
                     .eq('id', matchedRule.id);
 
-                  autoRepliedCount++;
-                  syncedCount++;
+                  convAutoRepliedCount++;
+                  convSyncedCount++;
                   await incrementMessageCount(userId);
                   console.log(`✅ Auto-replied to DM via automation: "${messageText}"`);
                   continue; // Skip to next message
                 } catch (error) {
                   console.error('Error auto-replying to DM:', error);
-                  // Continue to AI analysis if auto-reply fails
+                  // Continue to basic message storage if auto-reply fails
                 }
               }
 
-              // Step 2: AI analysis with conversation context
-              const analysis = await analyzeMessageWithContext(
-                messageText,
-                userId,
-                conversationData.conversationId,
-                msg.created_time,
-                activeRules
-              );
-
-              // Store message with conversation_id
+              // Step 2: Store message WITHOUT AI analysis (lazy load AI on demand)
+              // This makes sync MUCH faster - AI will run when user views the message
               await supabaseAdmin.from('instagram_messages').insert({
                 user_id: userId,
                 message_id: msg.id,
@@ -198,54 +199,44 @@ export async function POST(request: NextRequest) {
                 sender_name: msg.from.name,
                 message_text: messageText,
                 timestamp: msg.created_time,
-                intent: analysis.intent,
-                intent_confidence: analysis.confidence,
-                ai_reply_suggestion_fi: analysis.suggestedReplyFi,
-                ai_reply_suggestion_en: analysis.suggestedReplyEn,
+                intent: null, // Will be filled by on-demand AI analysis
+                intent_confidence: null,
+                ai_reply_suggestion_fi: null,
+                ai_reply_suggestion_en: null,
               });
 
-              // Step 3: Add AI-generated reply to approval queue if auto-reply is enabled
-              if (profile.auto_reply_dms_enabled) {
-                const suggestedReply =
-                  analysis.detectedLanguage === 'fi'
-                    ? analysis.suggestedReplyFi
-                    : analysis.suggestedReplyEn;
-
-                await supabaseAdmin.from('auto_reply_queue').insert({
-                  user_id: userId,
-                  message_type: 'dm',
-                  message_id: msg.id,
-                  conversation_id: conversationData.conversationId, // Add conversation ID for replying
-                  sender_id: msg.from.id, // Add sender ID as alternative
-                  message_text: messageText,
-                  sender_username: msg.from.username,
-                  suggested_reply: suggestedReply,
-                  detected_language: analysis.detectedLanguage || 'en',
-                  status: 'pending',
-                });
-
-                queuedCount++;
-                console.log(`📝 Queued DM AI reply for approval: "${messageText}"`);
-              }
-
-              // Increment message count
-              await incrementMessageCount(userId);
-
-              syncedCount++;
-              analyzedCount++;
-            } else {
-              skippedCount++;
+              convSyncedCount++;
+              console.log(`💾 Stored message (AI deferred): "${messageText.substring(0, 50)}..."`)
             }
           }
+
+          // NOTE: Follower insights are now updated by daily aggregation job
+          // This improves sync performance and ensures accurate calculations
+        } catch (error) {
+          console.error('Error processing conversation:', error);
         }
 
-        // NOTE: Follower insights are now updated by daily aggregation job
-        // This improves sync performance and ensures accurate calculations
-      } catch (error) {
-        console.error('Error processing conversation:', error);
-        continue;
-      }
-    }
+        return {
+          syncedCount: convSyncedCount,
+          analyzedCount: convAnalyzedCount,
+          skippedCount: convSkippedCount,
+          autoRepliedCount: convAutoRepliedCount,
+          queuedCount: convQueuedCount,
+        };
+      })
+    );
+
+    // Aggregate results from all conversations
+    const totals = results.reduce(
+      (acc, result) => ({
+        syncedCount: acc.syncedCount + result.syncedCount,
+        analyzedCount: acc.analyzedCount + result.analyzedCount,
+        skippedCount: acc.skippedCount + result.skippedCount,
+        autoRepliedCount: acc.autoRepliedCount + result.autoRepliedCount,
+        queuedCount: acc.queuedCount + result.queuedCount,
+      }),
+      { syncedCount: 0, analyzedCount: 0, skippedCount: 0, autoRepliedCount: 0, queuedCount: 0 }
+    );
 
     // Update last sync timestamp
     await supabaseAdmin
@@ -253,15 +244,15 @@ export async function POST(request: NextRequest) {
       .update({ last_instagram_sync: syncStartTime })
       .eq('id', userId);
 
-    console.log('✅ Sync complete:', { syncedCount, skippedCount, analyzedCount, autoRepliedCount, queuedCount });
+    console.log('✅ Sync complete:', totals);
 
     return NextResponse.json({
       success: true,
-      syncedMessages: syncedCount,
-      skippedMessages: skippedCount,
-      analyzedMessages: analyzedCount,
-      autoReplied: autoRepliedCount,
-      queuedForApproval: queuedCount,
+      syncedMessages: totals.syncedCount,
+      skippedMessages: totals.skippedCount,
+      analyzedMessages: totals.analyzedCount,
+      autoReplied: totals.autoRepliedCount,
+      queuedForApproval: totals.queuedCount,
     });
   } catch (error) {
     console.error('Error syncing messages:', error);

@@ -71,12 +71,21 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: 'User ID required' }, { status: 400 });
     }
 
+    const clearTimestamp = new Date().toISOString();
+
     // Delete all messages, comments, and queue items
     const [dms, comments, queue] = await Promise.all([
       supabaseAdmin.from('instagram_messages').delete().eq('user_id', userId),
       supabaseAdmin.from('instagram_comments').delete().eq('user_id', userId),
       supabaseAdmin.from('auto_reply_queue').delete().eq('user_id', userId),
     ]);
+
+    // Update profile with messages_cleared_at timestamp
+    // This prevents old messages from being re-synced
+    await supabaseAdmin
+      .from('profiles')
+      .update({ messages_cleared_at: clearTimestamp })
+      .eq('id', userId);
 
     return NextResponse.json({
       success: true,

@@ -76,31 +76,54 @@ export async function POST(request: NextRequest) {
 
 async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
   console.log('✅ Checkout completed:', session.id);
+  console.log('📋 Session details:', {
+    customer: session.customer,
+    subscription: session.subscription,
+    userId: session.metadata?.userId,
+    mode: session.mode,
+    payment_status: session.payment_status,
+  });
 
   const customerId = session.customer as string;
   const subscriptionId = session.subscription as string;
   const userId = session.metadata?.userId;
 
+  if (!subscriptionId) {
+    console.error('❌ No subscription ID in checkout session');
+    return;
+  }
+
   // Get subscription details
   const subscription = await stripe.subscriptions.retrieve(subscriptionId);
   const priceId = subscription.items.data[0].price.id;
 
+  console.log('💳 Subscription details:', {
+    id: subscription.id,
+    status: subscription.status,
+    priceId: priceId,
+  });
+
   // Find the plan by Stripe price ID
-  const { data: plan } = await supabaseAdmin
+  const { data: plan, error: planError } = await supabaseAdmin
     .from('subscription_plans')
     .select('*')
     .eq('stripe_price_id', priceId)
     .single();
 
-  if (!plan) {
-    console.error('Plan not found for price ID:', priceId);
+  if (planError || !plan) {
+    console.error('❌ Plan not found for price ID:', priceId, planError);
     return;
   }
 
+  console.log('📦 Found plan:', { id: plan.id, name: plan.name });
+
   // Update user profile - try by userId first (from metadata), then by customer ID
   let error;
+  let updateResult;
+
   if (userId) {
-    const result = await supabaseAdmin
+    console.log('🔄 Updating profile by userId:', userId);
+    updateResult = await supabaseAdmin
       .from('profiles')
       .update({
         stripe_customer_id: customerId,
@@ -111,9 +134,10 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
         updated_at: new Date().toISOString(),
       })
       .eq('id', userId);
-    error = result.error;
+    error = updateResult.error;
   } else {
-    const result = await supabaseAdmin
+    console.log('🔄 Updating profile by customer ID:', customerId);
+    updateResult = await supabaseAdmin
       .from('profiles')
       .update({
         stripe_customer_id: customerId,
@@ -124,13 +148,14 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
         updated_at: new Date().toISOString(),
       })
       .eq('stripe_customer_id', customerId);
-    error = result.error;
+    error = updateResult.error;
   }
 
   if (error) {
-    console.error('Error updating profile after checkout:', error);
+    console.error('❌ Error updating profile after checkout:', error);
   } else {
     console.log('✅ Subscription activated for user:', userId || customerId);
+    console.log('📊 Rows updated:', updateResult.count);
   }
 }
 

@@ -7,10 +7,11 @@ interface QuickReplyBoxProps {
   onSend: (text: string) => Promise<void>;
   onCancel: () => void;
   placeholder?: string;
+  initialValue?: string; // Pre-fill with AI suggestion
 }
 
-export default function QuickReplyBox({ onSend, onCancel, placeholder = 'Type your reply...' }: QuickReplyBoxProps) {
-  const [replyText, setReplyText] = useState('');
+export default function QuickReplyBox({ onSend, onCancel, placeholder = 'Type your reply...', initialValue = '' }: QuickReplyBoxProps) {
+  const [replyText, setReplyText] = useState(initialValue);
   const [sending, setSending] = useState(false);
 
   const handleSend = async () => {

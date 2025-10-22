@@ -1,10 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { UnifiedInboxItem } from '@/lib/types';
 import LeadBadge from './LeadBadge';
 import QuickReplyBox from './QuickReplyBox';
-import { CheckCircle, MessageSquare, MessageCircle, Clock, Edit, X, Check, Send } from 'lucide-react';
+import { CheckCircle, MessageSquare, MessageCircle, Clock, Edit, X, Check, Send, Loader } from 'lucide-react';
 
 interface UnifiedInboxItemProps {
   item: UnifiedInboxItem;
@@ -25,12 +25,60 @@ export default function UnifiedInboxItemComponent({
   const [showEditReply, setShowEditReply] = useState(false);
   const [editedReply, setEditedReply] = useState(item.ai_suggestion_fi || item.ai_suggestion_en || '');
   const [processing, setProcessing] = useState(false);
+  const [loadingAI, setLoadingAI] = useState(false);
+  const [aiSuggestionFi, setAiSuggestionFi] = useState(item.ai_suggestion_fi);
+  const [aiSuggestionEn, setAiSuggestionEn] = useState(item.ai_suggestion_en);
+  const [intent, setIntent] = useState(item.intent);
+  const [intentConfidence, setIntentConfidence] = useState(item.intent_confidence);
+
+  // Lazy load AI analysis when message is first viewed (if not already analyzed)
+  useEffect(() => {
+    const needsAIAnalysis = !item.replied_at && !aiSuggestionFi && !aiSuggestionEn && item.type !== 'pending_approval';
+
+    if (needsAIAnalysis) {
+      loadAIAnalysis();
+    }
+  }, [item.source_id]);
+
+  const loadAIAnalysis = async () => {
+    setLoadingAI(true);
+    try {
+      const response = await fetch('/api/messages/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messageId: item.source_id,
+          userId: item.user_id,
+          type: item.type === 'comment' ? 'comment' : 'dm',
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && data.analysis) {
+          setIntent(data.analysis.intent);
+          setIntentConfidence(data.analysis.confidence);
+          setAiSuggestionFi(data.analysis.suggestedReplyFi);
+          setAiSuggestionEn(data.analysis.suggestedReplyEn);
+          setEditedReply(data.analysis.suggestedReplyFi || data.analysis.suggestedReplyEn || '');
+          console.log(`✅ Lazy-loaded AI analysis for ${item.type}: ${item.source_id} ${data.cached ? '(cached)' : ''}`);
+        }
+      }
+    } catch (error) {
+      console.error('Error loading AI analysis:', error);
+    } finally {
+      setLoadingAI(false);
+    }
+  };
 
   const typeIcon = item.type === 'dm' ? <MessageSquare className="h-4 w-4" /> : <MessageCircle className="h-4 w-4" />;
   const typeLabel = item.type === 'dm' ? 'DM' : item.type === 'comment' ? 'Comment' : 'Pending Approval';
   const typeColor = item.type === 'dm' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800';
 
-  const aiSuggestion = item.detected_language === 'fi' ? item.ai_suggestion_fi : item.ai_suggestion_en;
+  // Use lazy-loaded AI suggestion or fallback to item's original suggestion
+  const aiSuggestion = item.detected_language === 'fi'
+    ? (aiSuggestionFi || item.ai_suggestion_fi)
+    : (aiSuggestionEn || item.ai_suggestion_en);
 
   const handleApprove = async () => {
     if (!item.queue_item_id || processing) return;
@@ -137,10 +185,16 @@ export default function UnifiedInboxItemComponent({
             <span>{typeLabel}</span>
           </span>
 
-          {/* Intent Badge */}
-          {item.intent && (
-            <span className={`px-2 py-1 rounded text-xs font-medium ${intentColors[item.intent] || intentColors.other}`}>
-              {item.intent.replace('_', ' ')}
+          {/* Intent Badge (with lazy loading indicator) */}
+          {loadingAI && (
+            <span className="px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-600 flex items-center space-x-1">
+              <Loader className="h-3 w-3 animate-spin" />
+              <span>Analyzing...</span>
+            </span>
+          )}
+          {!loadingAI && intent && (
+            <span className={`px-2 py-1 rounded text-xs font-medium ${intentColors[intent] || intentColors.other}`}>
+              {intent.replace('_', ' ')}
             </span>
           )}
 
@@ -171,16 +225,26 @@ export default function UnifiedInboxItemComponent({
         <p className="text-gray-800 text-sm whitespace-pre-wrap">{item.message_text}</p>
       </div>
 
+      {/* AI Suggestion Loading Indicator */}
+      {loadingAI && !item.replied_at && (
+        <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 mb-3">
+          <div className="flex items-center space-x-2 text-purple-700">
+            <Loader className="h-4 w-4 animate-spin" />
+            <p className="text-sm">Generating AI reply suggestion...</p>
+          </div>
+        </div>
+      )}
+
       {/* AI Suggestion (if available and not replied yet) */}
-      {aiSuggestion && !item.replied_at && (
+      {!loadingAI && aiSuggestion && !item.replied_at && (
         <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 mb-3">
           <div className="flex items-center justify-between mb-1">
             <p className="text-xs font-medium text-purple-700">
               AI Suggestion ({item.detected_language === 'fi' ? 'Finnish' : 'English'}):
             </p>
-            {item.intent_confidence && (
+            {intentConfidence && (
               <span className="text-xs text-purple-600">
-                {Math.round(item.intent_confidence * 100)}% confidence
+                {Math.round(intentConfidence * 100)}% confidence
               </span>
             )}
           </div>
@@ -278,6 +342,7 @@ export default function UnifiedInboxItemComponent({
           onSend={handleQuickReply}
           onCancel={() => setShowQuickReply(false)}
           placeholder="Type your reply..."
+          initialValue={aiSuggestion || ''}
         />
       )}
 

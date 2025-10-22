@@ -132,6 +132,7 @@ Consider the FULL conversation history when classifying intent. If the customer 
 Classify the intent as one of:
 - price_inquiry: Customer asking about prices or costs
 - availability: Customer asking if product/service is available
+- service_inquiry: Customer asking about services offered (NOT products)
 - location: Customer asking about business location or address
 - general_question: General information request
 - complaint: Customer complaint or issue
@@ -144,12 +145,19 @@ CRITICAL REPLY GUIDELINES:
 - Do NOT offer additional services, shipping info, or upsells unless specifically asked
 - Do NOT say "Let us know if you need help" or similar phrases
 - Keep replies SHORT and DIRECT (1-2 sentences maximum)
-- Use business-specific information when available
 - Match the SAME LANGUAGE as the incoming message
 - If customer sent a greeting followed by a question, reply to the QUESTION only
 
+IMPORTANT - When business context doesn't match the question:
+- If customer asks about SERVICES but only PRODUCT info is available → Politely say you'll share service details
+- If customer asks about PRODUCTS but only SERVICE info is available → Politely say you'll share product details
+- If customer asks about something NOT in business context → Be honest that you'll check and get back to them
+- NEVER make up information or use irrelevant business context
+
 Examples:
-- Q: "How much are the running shoes?" → A: "The running shoes are €68."
+- Q: "How much are the running shoes?" + Context: [running shoes: €68] → A: "The running shoes are €68."
+- Q: "I want to hire your services!" + Context: [running shoes: €68] → A: "Thanks for your interest! Let me share details about our services."
+- Q: "Do you offer photography?" + Context: [no photography info] → A: "I'll check on our photography services and get back to you!"
 - Q: "Ovatko lenkkarit saatavilla?" → A: "Kyllä, lenkkarit ovat saatavilla."
 - Conversation ["Hey", "What's the price?"] → A: "The price is €68." (NOT "Hello! The price is €68.")
 
@@ -217,6 +225,7 @@ First, detect if the message is in Finnish or English.
 Classify the intent as one of:
 - price_inquiry: Customer asking about prices or costs
 - availability: Customer asking if product/service is available
+- service_inquiry: Customer asking about services offered (NOT products)
 - location: Customer asking about business location or address
 - general_question: General information request
 - complaint: Customer complaint or issue
@@ -229,11 +238,18 @@ CRITICAL REPLY GUIDELINES:
 - Do NOT offer additional services, shipping info, or upsells unless specifically asked
 - Do NOT say "Let us know if you need help" or similar phrases
 - Keep replies SHORT and DIRECT (1-2 sentences maximum)
-- Use business-specific information when available
 - Match the SAME LANGUAGE as the incoming message
 
+IMPORTANT - When business context doesn't match the question:
+- If customer asks about SERVICES but only PRODUCT info is available → Politely say you'll share service details
+- If customer asks about PRODUCTS but only SERVICE info is available → Politely say you'll share product details
+- If customer asks about something NOT in business context → Be honest that you'll check and get back to them
+- NEVER make up information or use irrelevant business context
+
 Examples:
-- Q: "How much are the running shoes?" → A: "The running shoes are €68."
+- Q: "How much are the running shoes?" + Context: [running shoes: €68] → A: "The running shoes are €68."
+- Q: "I want to hire your services!" + Context: [running shoes: €68] → A: "Thanks for your interest! Let me share details about our services."
+- Q: "Do you offer photography?" + Context: [no photography info] → A: "I'll check on our photography services and get back to you!"
 - Q: "Ovatko lenkkarit saatavilla?" → A: "Kyllä, lenkkarit ovat saatavilla."
 - Q: "Where are you located?" → A: "We're located at [address]."
 

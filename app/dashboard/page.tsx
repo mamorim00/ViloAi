@@ -18,7 +18,6 @@ import {
   Clock,
   CheckCircle,
   ArrowRight,
-  Trash2,
 } from 'lucide-react';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import LanguageToggle from '@/components/LanguageToggle';
@@ -42,11 +41,48 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
-  const [archiving, setArchiving] = useState(false);
 
   useEffect(() => {
     checkUser();
     loadInbox();
+
+    // Poll for subscription update if coming from Stripe checkout
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('subscription') === 'success') {
+      // Poll every 2 seconds for up to 20 seconds to check if subscription updated
+      let pollCount = 0;
+      const pollInterval = setInterval(async () => {
+        pollCount++;
+
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) {
+          clearInterval(pollInterval);
+          return;
+        }
+
+        const { data: profileData } = await supabase
+          .from('profiles')
+          .select('subscription_plan_id, subscription_status')
+          .eq('id', user.id)
+          .single();
+
+        // If subscription is active, stop polling and refresh profile
+        if (profileData?.subscription_plan_id && profileData?.subscription_status === 'active') {
+          clearInterval(pollInterval);
+          console.log('✅ Subscription detected! Refreshing profile...');
+          await checkUser();
+        }
+
+        // Stop after 10 polls (20 seconds)
+        if (pollCount >= 10) {
+          clearInterval(pollInterval);
+          console.log('⏱️ Subscription poll timeout. Manual refresh may be needed.');
+        }
+      }, 2000);
+
+      // Cleanup interval on unmount
+      return () => clearInterval(pollInterval);
+    }
   }, []);
 
   const checkUser = async () => {
@@ -124,33 +160,6 @@ export default function DashboardPage() {
       console.error('Sync failed:', error);
     } finally {
       setSyncing(false);
-    }
-  };
-
-  const handleClearMessages = async () => {
-    if (!profile) return;
-
-    const confirmed = confirm(
-      'Are you sure you want to clear all old messages? This will delete all DMs, comments, and pending approvals. This action cannot be undone.'
-    );
-
-    if (!confirmed) return;
-
-    setArchiving(true);
-    try {
-      const response = await fetch(`/api/messages/archive?userId=${profile.id}`, {
-        method: 'DELETE',
-      });
-
-      if (response.ok) {
-        await loadInbox();
-        alert('All messages cleared successfully! You can now sync to start fresh.');
-      }
-    } catch (error) {
-      console.error('Error clearing messages:', error);
-      alert('Failed to clear messages. Please try again.');
-    } finally {
-      setArchiving(false);
     }
   };
 
@@ -391,24 +400,14 @@ export default function DashboardPage() {
             <h2 className="text-xl font-bold text-gray-900">Quick Actions</h2>
             <div className="flex items-center space-x-3">
               {profile?.instagram_connected && (
-                <>
-                  <button
-                    onClick={handleClearMessages}
-                    disabled={archiving}
-                    className="flex items-center space-x-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                    <span>{archiving ? 'Clearing...' : 'Clear All Messages'}</span>
-                  </button>
-                  <button
-                    onClick={handleSync}
-                    disabled={syncing}
-                    className="flex items-center space-x-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <RefreshCw className={`h-5 w-5 ${syncing ? 'animate-spin' : ''}`} />
-                    <span>{syncing ? 'Syncing...' : 'Sync Messages'}</span>
-                  </button>
-                </>
+                <button
+                  onClick={handleSync}
+                  disabled={syncing}
+                  className="flex items-center space-x-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <RefreshCw className={`h-5 w-5 ${syncing ? 'animate-spin' : ''}`} />
+                  <span>{syncing ? 'Syncing...' : 'Sync Messages'}</span>
+                </button>
               )}
             </div>
           </div>

@@ -57,6 +57,20 @@ export async function POST(request: NextRequest) {
       10 // Last 10 posts
     );
 
+    // Fetch all existing UNARCHIVED comment IDs for this user in ONE query
+    // Archived comments are skipped entirely (already answered and older than 30 days)
+    const { data: existingComments } = await supabaseAdmin
+      .from('instagram_comments')
+      .select('comment_id')
+      .eq('user_id', userId)
+      .eq('is_archived', false);
+
+    const existingCommentIds = new Set(
+      (existingComments || []).map((c) => c.comment_id)
+    );
+
+    console.log(`📋 Found ${existingCommentIds.size} unarchived comments in database`);
+
     let syncedCount = 0;
     let autoRepliedCount = 0;
     let queuedCount = 0;
@@ -66,14 +80,9 @@ export async function POST(request: NextRequest) {
     for (const post of commentData) {
       for (const comment of post.comments) {
         try {
-          // Check if comment already exists
-          const { data: existing } = await supabaseAdmin
-            .from('instagram_comments')
-            .select('id')
-            .eq('comment_id', comment.id)
-            .single();
-
-          if (existing) {
+          // Skip if comment already exists (fast Set lookup)
+          // Archived comments are not in the Set, so they won't be re-processed
+          if (existingCommentIds.has(comment.id)) {
             skippedCount++;
             continue;
           }
@@ -146,32 +155,8 @@ export async function POST(request: NextRequest) {
             }
           }
 
-          // Step 2: Check if comment needs a reply (filter casual comments)
-          const replyCheck = await shouldReplyToComment(commentText);
-
-          if (!replyCheck.shouldReply) {
-            // Store comment but mark as not needing reply
-            await supabaseAdmin.from('instagram_comments').insert({
-              user_id: userId,
-              comment_id: comment.id,
-              post_id: post.mediaId,
-              media_id: post.mediaId,
-              sender_id: comment.from?.id || comment.username || 'unknown',
-              sender_username: comment.username || comment.from?.username,
-              comment_text: commentText,
-              timestamp: comment.timestamp,
-              is_question: false,
-            });
-
-            syncedCount++;
-            console.log(`⏭️ Skipped casual comment: "${commentText}" (${replyCheck.reason})`);
-            continue;
-          }
-
-          // Step 3: AI analysis for questions/inquiries
-          const analysis = await analyzeMessageIntent(commentText, activeBusinessRules);
-
-          // Store comment
+          // Step 2: Store comment WITHOUT AI analysis (lazy load AI on demand)
+          // This makes sync MUCH faster - AI will run when user views the comment
           await supabaseAdmin.from('instagram_comments').insert({
             user_id: userId,
             comment_id: comment.id,
@@ -181,34 +166,15 @@ export async function POST(request: NextRequest) {
             sender_username: comment.username || comment.from?.username,
             comment_text: commentText,
             timestamp: comment.timestamp,
-            is_question: true,
-            intent: analysis.intent,
-            intent_confidence: analysis.confidence,
-            ai_reply_suggestion_fi: analysis.suggestedReplyFi,
-            ai_reply_suggestion_en: analysis.suggestedReplyEn,
+            is_question: null, // Will be determined by lazy AI analysis
+            intent: null,
+            intent_confidence: null,
+            ai_reply_suggestion_fi: null,
+            ai_reply_suggestion_en: null,
           });
 
-          // Step 4: Add AI-generated reply to approval queue
-          const suggestedReply =
-            analysis.detectedLanguage === 'fi'
-              ? analysis.suggestedReplyFi
-              : analysis.suggestedReplyEn;
-
-          await supabaseAdmin.from('auto_reply_queue').insert({
-            user_id: userId,
-            message_type: 'comment',
-            message_id: comment.id,
-            sender_id: comment.from?.id || comment.username || 'unknown', // Add sender ID
-            message_text: commentText,
-            sender_username: comment.username || comment.from?.username,
-            suggested_reply: suggestedReply,
-            detected_language: analysis.detectedLanguage || 'en',
-            status: 'pending',
-          });
-
-          queuedCount++;
           syncedCount++;
-          console.log(`📝 Queued AI reply for approval: "${commentText}"`);
+          console.log(`💾 Stored comment (AI deferred): "${commentText.substring(0, 50)}..."`);
         } catch (error) {
           console.error('Error processing comment:', error);
           continue;

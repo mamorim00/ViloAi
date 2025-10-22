@@ -159,26 +159,25 @@ export async function getConversationMessages(
 }
 
 // Get conversations updated after a specific timestamp (for incremental sync)
+// NOTE: We fetch ALL recent conversations because Instagram's updated_time can be unreliable
+// Our efficient duplicate filtering (Set lookup) handles already-processed messages
 export async function getInstagramConversationsSince(
   pageId: string,
   accessToken: string,
   sinceTimestamp?: string
 ) {
   try {
-    console.log('🔍 Fetching Instagram conversations since:', sinceTimestamp || 'beginning');
+    console.log('🔍 Fetching recent Instagram conversations (ignoring since parameter for reliability)');
 
     const params: any = {
       platform: 'instagram',
       access_token: accessToken,
       fields: 'id,updated_time,participants',
+      limit: 50, // Fetch last 50 conversations to ensure we don't miss recent messages
     };
 
-    // Only fetch conversations updated since last sync
-    if (sinceTimestamp) {
-      // Convert ISO timestamp to Unix timestamp for Instagram API
-      const unixTimestamp = Math.floor(new Date(sinceTimestamp).getTime() / 1000);
-      params.since = unixTimestamp;
-    }
+    // NOTE: Removed 'since' filter because Instagram's updated_time is unreliable
+    // We rely on our efficient message ID filtering instead
 
     const response = await axios.get(
       `${META_API_BASE}/${pageId}/conversations`,

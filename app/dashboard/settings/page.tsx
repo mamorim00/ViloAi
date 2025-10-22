@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase/client';
 import { BusinessRule, RuleType, AutoReplySettings } from '@/lib/types';
-import { ArrowLeft, Plus, Trash2, Edit2, Save, X, Zap, MessageSquare } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, Edit2, Save, X, Zap, MessageSquare, AlertTriangle } from 'lucide-react';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import LanguageToggle from '@/components/LanguageToggle';
 
@@ -27,6 +27,7 @@ export default function SettingsPage() {
     auto_reply_dms_enabled: false,
   });
   const [userId, setUserId] = useState<string | null>(null);
+  const [clearing, setClearing] = useState(false);
 
   useEffect(() => {
     checkAuth();
@@ -195,6 +196,34 @@ export default function SettingsPage() {
       console.error('Error updating auto-reply settings:', error);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleClearMessages = async () => {
+    if (!userId) return;
+
+    const confirmed = confirm(
+      'Are you sure you want to clear all old messages? This will permanently delete all DMs, comments, and pending approvals. After clearing, only new messages synced after this point will appear. This action cannot be undone.'
+    );
+
+    if (!confirmed) return;
+
+    setClearing(true);
+    try {
+      const response = await fetch(`/api/messages/archive?userId=${userId}`, {
+        method: 'DELETE',
+      });
+
+      if (response.ok) {
+        alert('All messages cleared successfully! When you sync next, only new messages will appear.');
+      } else {
+        alert('Failed to clear messages. Please try again.');
+      }
+    } catch (error) {
+      console.error('Error clearing messages:', error);
+      alert('Failed to clear messages. Please try again.');
+    } finally {
+      setClearing(false);
     }
   };
 
@@ -418,6 +447,34 @@ export default function SettingsPage() {
             onDelete={handleDeleteRule}
             saving={saving}
           />
+        </div>
+
+        {/* Danger Zone */}
+        <div className="bg-red-50 border-2 border-red-200 rounded-lg shadow-md p-6 mt-8">
+          <div className="flex items-center mb-4">
+            <AlertTriangle className="h-6 w-6 text-red-600 mr-2" />
+            <h2 className="text-xl font-bold text-red-900">Danger Zone</h2>
+          </div>
+          <p className="text-red-800 mb-4">
+            Careful! Actions in this section are permanent and cannot be undone.
+          </p>
+
+          <div className="bg-white rounded-lg p-5 border border-red-200">
+            <h3 className="font-semibold text-gray-900 mb-2">Clear All Messages</h3>
+            <p className="text-sm text-gray-600 mb-4">
+              This will permanently delete all DMs, comments, and pending approvals from your database.
+              After clearing, when you sync messages, only <strong>new messages</strong> received after this point will appear.
+              Old messages will not be re-synced.
+            </p>
+            <button
+              onClick={handleClearMessages}
+              disabled={clearing}
+              className="flex items-center space-x-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed font-semibold"
+            >
+              <Trash2 className="h-4 w-4" />
+              <span>{clearing ? 'Clearing...' : 'Clear All Messages'}</span>
+            </button>
+          </div>
         </div>
       </div>
     </div>

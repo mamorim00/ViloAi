@@ -148,7 +148,7 @@ export async function GET(request: NextRequest) {
           sender_username: queue.sender_username,
           message_text: queue.message_text,
           timestamp: queue.created_at,
-          intent,
+          intent: intent as MessageIntent | undefined,
           intent_confidence: intentConfidence,
           ai_suggestion_fi: queue.detected_language === 'fi' ? queue.suggested_reply : undefined,
           ai_suggestion_en: queue.detected_language === 'en' ? queue.suggested_reply : undefined,

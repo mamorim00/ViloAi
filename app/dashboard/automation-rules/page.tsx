@@ -5,11 +5,30 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase/client';
 import { AutomationRule, TriggerType, MatchType } from '@/lib/types';
-import { ArrowLeft, Plus, Trash2, Edit2, Save, X, Zap, MessageSquare, Hash } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, Edit2, Save, X, Zap, MessageSquare, Hash, CheckCircle, Clock, TrendingUp, Settings, LogOut } from 'lucide-react';
+import { useLanguage } from '@/lib/i18n/LanguageContext';
+import LanguageToggle from '@/components/LanguageToggle';
+
+interface AutoReplyStats {
+  total_sent: number;
+  sent_today: number;
+  sent_this_week: number;
+  automation_rules_used: number;
+  ai_suggestions_used: number;
+}
 
 export default function AutomationRulesPage() {
   const router = useRouter();
+  const { t } = useLanguage();
   const [rules, setRules] = useState<AutomationRule[]>([]);
+  const [stats, setStats] = useState<AutoReplyStats>({
+    total_sent: 0,
+    sent_today: 0,
+    sent_this_week: 0,
+    automation_rules_used: 0,
+    ai_suggestions_used: 0,
+  });
+  const [profile, setProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -34,6 +53,20 @@ export default function AutomationRulesPage() {
     } else {
       setUserId(user.id);
       loadRules(user.id);
+      loadStats(user.id);
+      loadProfile(user.id);
+    }
+  };
+
+  const loadProfile = async (uid: string) => {
+    const { data } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', uid)
+      .single();
+
+    if (data) {
+      setProfile(data);
     }
   };
 
@@ -49,6 +82,40 @@ export default function AutomationRulesPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const loadStats = async (uid: string) => {
+    try {
+      const response = await fetch(`/api/auto-reply/logs?userId=${uid}&limit=1000`);
+      if (response.ok) {
+        const data = await response.json();
+        const logs = data.logs || [];
+
+        const now = new Date();
+        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+        const sentToday = logs.filter((log: any) => new Date(log.sent_at) >= today).length;
+        const sentThisWeek = logs.filter((log: any) => new Date(log.sent_at) >= weekAgo).length;
+        const automationRulesUsed = logs.filter((log: any) => log.reply_source === 'automation_rule').length;
+        const aiSuggestionsUsed = logs.filter((log: any) => log.reply_source === 'ai_approved').length;
+
+        setStats({
+          total_sent: logs.length,
+          sent_today: sentToday,
+          sent_this_week: sentThisWeek,
+          automation_rules_used: automationRulesUsed,
+          ai_suggestions_used: aiSuggestionsUsed,
+        });
+      }
+    } catch (error) {
+      console.error('Error loading stats:', error);
+    }
+  };
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    router.push('/');
   };
 
   const handleCreateRule = async () => {
@@ -173,23 +240,87 @@ export default function AutomationRulesPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Header */}
-        <div className="mb-6">
-          <Link
-            href="/dashboard/settings"
-            className="flex items-center text-purple-600 hover:text-purple-700 mb-4"
-          >
-            <ArrowLeft className="h-5 w-5 mr-2" />
-            Back to Settings
-          </Link>
-          <div className="flex items-center mb-2">
-            <Zap className="h-8 w-8 text-purple-600 mr-3" />
-            <h1 className="text-3xl font-bold text-gray-900">Automation Rules</h1>
+      {/* Header */}
+      <header className="bg-white shadow-sm">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+          <div className="flex justify-between items-center">
+            <div className="flex items-center space-x-4">
+              <Link
+                href="/dashboard"
+                className="flex items-center space-x-2 text-gray-600 hover:text-gray-900"
+              >
+                <ArrowLeft className="h-5 w-5" />
+                <span>Dashboard</span>
+              </Link>
+              <div className="flex items-center space-x-2">
+                <Zap className="h-8 w-8 text-orange-600" />
+                <h1 className="text-2xl font-bold text-gray-900">Automations</h1>
+              </div>
+            </div>
+            <div className="flex items-center space-x-4">
+              <LanguageToggle />
+              <span className="text-gray-700">
+                {profile?.business_name || profile?.full_name || profile?.email}
+              </span>
+              <Link
+                href="/dashboard/settings"
+                className="flex items-center space-x-2 text-gray-600 hover:text-gray-900"
+              >
+                <Settings className="h-5 w-5" />
+                <span>{t.common.settings}</span>
+              </Link>
+              <button
+                onClick={handleLogout}
+                className="flex items-center space-x-2 text-gray-600 hover:text-gray-900"
+              >
+                <LogOut className="h-5 w-5" />
+                <span>{t.common.logout}</span>
+              </button>
+            </div>
           </div>
+        </div>
+      </header>
+
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Page Description */}
+        <div className="mb-6">
           <p className="text-gray-600">
             Create rules to automatically reply to specific messages instantly. Perfect for FAQs, promotions, and common inquiries.
           </p>
+        </div>
+
+        {/* Stats Overview */}
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
+          <StatCard
+            icon={<Zap className="h-6 w-6 text-orange-600" />}
+            title="Active Rules"
+            value={rules.filter((r) => r.is_active).length}
+            bgColor="bg-orange-50"
+          />
+          <StatCard
+            icon={<CheckCircle className="h-6 w-6 text-green-600" />}
+            title="Total Sent"
+            value={stats.total_sent}
+            bgColor="bg-green-50"
+          />
+          <StatCard
+            icon={<Clock className="h-6 w-6 text-blue-600" />}
+            title="Today"
+            value={stats.sent_today}
+            bgColor="bg-blue-50"
+          />
+          <StatCard
+            icon={<TrendingUp className="h-6 w-6 text-purple-600" />}
+            title="This Week"
+            value={stats.sent_this_week}
+            bgColor="bg-purple-50"
+          />
+          <StatCard
+            icon={<Hash className="h-6 w-6 text-gray-600" />}
+            title="Auto Rules"
+            value={stats.automation_rules_used}
+            bgColor="bg-gray-50"
+          />
         </div>
 
         {/* Info Box */}
@@ -353,7 +484,7 @@ export default function AutomationRulesPage() {
                         <div className="flex-1">
                           <div className="flex items-center space-x-3 mb-2">
                             <span className="text-2xl">{getTriggerTypeIcon(rule.trigger_type)}</span>
-                            <span className="font-bold text-gray-900 text-lg">"{rule.trigger_text}"</span>
+                            <span className="font-bold text-gray-900 text-lg">&ldquo;{rule.trigger_text}&rdquo;</span>
                             <span className={`px-2 py-1 rounded text-xs font-medium ${getMatchTypeBadge(rule.match_type)}`}>
                               {rule.match_type.replace('_', ' ')}
                             </span>
@@ -413,6 +544,30 @@ export default function AutomationRulesPage() {
             </div>
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+function StatCard({
+  icon,
+  title,
+  value,
+  bgColor,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  value: number;
+  bgColor: string;
+}) {
+  return (
+    <div className={`${bgColor} rounded-lg p-4`}>
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-xs font-medium text-gray-600 uppercase">{title}</p>
+          <p className="text-2xl font-bold text-gray-900 mt-1">{value}</p>
+        </div>
+        <div>{icon}</div>
       </div>
     </div>
   );

@@ -39,16 +39,38 @@ export default function SignupPage() {
       if (error) throw error;
 
       if (data.user) {
+        // Wait a moment for the trigger to create the profile
+        await new Promise(resolve => setTimeout(resolve, 1000));
+
         // Update profile with additional info and initialize onboarding
-        await supabase
-          .from('profiles')
-          .update({
-            full_name: fullName,
-            business_name: businessName,
-            onboarding_step: 0,
-            onboarding_started_at: new Date().toISOString(),
-          })
-          .eq('id', data.user.id);
+        // Retry up to 3 times if profile not found
+        let retries = 3;
+        let profileUpdated = false;
+
+        while (retries > 0 && !profileUpdated) {
+          const { error: updateError } = await supabase
+            .from('profiles')
+            .update({
+              full_name: fullName,
+              business_name: businessName,
+              onboarding_step: 0,
+              onboarding_started_at: new Date().toISOString(),
+            })
+            .eq('id', data.user.id);
+
+          if (!updateError) {
+            profileUpdated = true;
+          } else {
+            retries--;
+            if (retries > 0) {
+              // Wait 500ms before retrying
+              await new Promise(resolve => setTimeout(resolve, 500));
+            } else {
+              // Profile update failed but user is created, can still proceed
+              console.warn('Profile update failed:', updateError);
+            }
+          }
+        }
 
         setSuccess(true);
         setTimeout(() => {
