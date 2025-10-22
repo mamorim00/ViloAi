@@ -53,11 +53,14 @@ export async function GET(request: NextRequest) {
   // Required scopes:
   // - pages_show_list: See user's Facebook Pages
   // - pages_read_engagement: Read page engagement data
+  // - business_management: Manage business account
   // - instagram_basic: Access basic Instagram account info
   // - instagram_manage_messages: Read and send Instagram DMs
-  const scopes = 'pages_show_list,pages_read_engagement,instagram_basic,instagram_manage_messages';
+  // - instagram_manage_comments: Manage comments (optional but useful)
+  const scopes = 'pages_show_list,pages_read_engagement,business_management,instagram_basic,instagram_manage_messages,instagram_manage_comments';
 
-  const authUrl = `https://www.facebook.com/v18.0/dialog/oauth?client_id=${metaAppId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${scopes}&response_type=code&state=${encodeURIComponent(state)}`;
+  // Force re-asking for permissions even if user previously declined
+  const authUrl = `https://www.facebook.com/v18.0/dialog/oauth?client_id=${metaAppId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${scopes}&response_type=code&state=${encodeURIComponent(state)}&auth_type=rerequest`;
 
   return NextResponse.redirect(authUrl);
 }
