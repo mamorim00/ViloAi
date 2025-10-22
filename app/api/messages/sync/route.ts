@@ -78,20 +78,19 @@ export async function POST(request: NextRequest) {
 
     const syncStartTime = new Date().toISOString();
 
-    // Fetch all existing UNARCHIVED message IDs for this user in ONE query
-    // This is MUCH faster than checking timestamp for every message
-    // Archived messages are skipped entirely (already answered and older than 30 days)
+    // Fetch all existing message IDs for this user in ONE query
+    // Skip messages that are archived or already replied to
     const { data: existingMessages } = await supabaseAdmin
       .from('instagram_messages')
-      .select('message_id')
-      .eq('user_id', userId)
-      .eq('is_archived', false);
+      .select('message_id, replied_at, archived_at')
+      .eq('user_id', userId);
 
+    // Create a Set of all message IDs (including archived/replied ones to avoid re-syncing)
     const existingMessageIds = new Set(
       (existingMessages || []).map((m) => m.message_id)
     );
 
-    console.log(`📋 Found ${existingMessageIds.size} unarchived messages in database`);
+    console.log(`📋 Found ${existingMessageIds.size} existing messages in database`);
 
     // Process conversations concurrently (but messages within each conversation sequentially to maintain context)
     const results = await Promise.all(

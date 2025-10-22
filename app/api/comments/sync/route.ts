@@ -57,19 +57,19 @@ export async function POST(request: NextRequest) {
       10 // Last 10 posts
     );
 
-    // Fetch all existing UNARCHIVED comment IDs for this user in ONE query
-    // Archived comments are skipped entirely (already answered and older than 30 days)
+    // Fetch all existing comment IDs for this user in ONE query
+    // Skip comments that are archived or already replied to
     const { data: existingComments } = await supabaseAdmin
       .from('instagram_comments')
-      .select('comment_id')
-      .eq('user_id', userId)
-      .eq('is_archived', false);
+      .select('comment_id, replied_at, archived_at')
+      .eq('user_id', userId);
 
+    // Create a Set of all comment IDs (including archived/replied ones to avoid re-syncing)
     const existingCommentIds = new Set(
       (existingComments || []).map((c) => c.comment_id)
     );
 
-    console.log(`📋 Found ${existingCommentIds.size} unarchived comments in database`);
+    console.log(`📋 Found ${existingCommentIds.size} existing comments in database`);
 
     let syncedCount = 0;
     let autoRepliedCount = 0;

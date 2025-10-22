@@ -4,13 +4,15 @@ import { useState, useEffect } from 'react';
 import { UnifiedInboxItem } from '@/lib/types';
 import LeadBadge from './LeadBadge';
 import QuickReplyBox from './QuickReplyBox';
-import { CheckCircle, MessageSquare, MessageCircle, Clock, Edit, X, Check, Send, Loader } from 'lucide-react';
+import { CheckCircle, MessageSquare, MessageCircle, Clock, Edit, X, Check, Send, Loader, Archive, Clock3 } from 'lucide-react';
 
 interface UnifiedInboxItemProps {
   item: UnifiedInboxItem;
   onApprove: (queueItemId: string, editedReply?: string) => Promise<void>;
   onReject: (queueItemId: string) => Promise<void>;
   onQuickReply: (itemType: string, sourceId: string, replyText: string, conversationId?: string, senderId?: string) => Promise<void>;
+  onIgnore: (itemType: string, sourceId: string) => Promise<void>;
+  onAddToPending: (itemType: string, sourceId: string, aiSuggestion: string) => Promise<void>;
   onRefresh: () => void;
 }
 
@@ -19,6 +21,8 @@ export default function UnifiedInboxItemComponent({
   onApprove,
   onReject,
   onQuickReply,
+  onIgnore,
+  onAddToPending,
   onRefresh,
 }: UnifiedInboxItemProps) {
   const [showQuickReply, setShowQuickReply] = useState(false);
@@ -141,6 +145,34 @@ export default function UnifiedInboxItemComponent({
     } catch (error) {
       console.error('Error sending quick reply:', error);
       alert('Failed to send reply. Please try again.');
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const handleIgnore = async () => {
+    if (processing) return;
+    setProcessing(true);
+    try {
+      await onIgnore(item.type, item.source_id);
+      onRefresh();
+    } catch (error) {
+      console.error('Error ignoring message:', error);
+      alert('Failed to ignore message. Please try again.');
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const handleAddToPending = async () => {
+    if (processing || !aiSuggestion) return;
+    setProcessing(true);
+    try {
+      await onAddToPending(item.type, item.source_id, aiSuggestion);
+      onRefresh();
+    } catch (error) {
+      console.error('Error adding to pending:', error);
+      alert('Failed to add to pending. Please try again.');
     } finally {
       setProcessing(false);
     }
@@ -324,14 +356,38 @@ export default function UnifiedInboxItemComponent({
 
           {/* Quick Reply Button (for non-pending items) */}
           {item.type !== 'pending_approval' && !showQuickReply && (
-            <button
-              onClick={() => setShowQuickReply(true)}
-              disabled={processing}
-              className="flex items-center space-x-1 px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 text-sm font-medium"
-            >
-              <MessageSquare className="h-4 w-4" />
-              <span>Reply</span>
-            </button>
+            <>
+              <button
+                onClick={() => setShowQuickReply(true)}
+                disabled={processing}
+                className="flex items-center space-x-1 px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 text-sm font-medium"
+              >
+                <MessageSquare className="h-4 w-4" />
+                <span>Reply</span>
+              </button>
+
+              {/* Add to Pending Button */}
+              {aiSuggestion && (
+                <button
+                  onClick={handleAddToPending}
+                  disabled={processing}
+                  className="flex items-center space-x-1 px-3 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 text-sm font-medium"
+                >
+                  <Clock3 className="h-4 w-4" />
+                  <span>Add to Pending</span>
+                </button>
+              )}
+
+              {/* Ignore Button */}
+              <button
+                onClick={handleIgnore}
+                disabled={processing}
+                className="flex items-center space-x-1 px-3 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 disabled:opacity-50 text-sm font-medium"
+              >
+                <Archive className="h-4 w-4" />
+                <span>Ignore</span>
+              </button>
+            </>
           )}
         </div>
       )}

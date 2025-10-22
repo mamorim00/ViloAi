@@ -123,8 +123,9 @@ export default function DashboardPage() {
       const response = await fetch(`/api/unified-inbox?userId=${user.id}&filter=all`);
       if (response.ok) {
         const data = await response.json();
-        // Show only first 10 items on dashboard
-        setInboxItems((data.items || []).slice(0, 10));
+        // Show only unanswered messages on dashboard (first 10)
+        const unansweredItems = (data.items || []).filter((item: UnifiedInboxItem) => !item.replied_at);
+        setInboxItems(unansweredItems.slice(0, 10));
         setStats(data.stats || { total: 0, leads: 0, pending_approval: 0, unanswered: 0, answered: 0 });
       }
     } catch (error) {
@@ -235,8 +236,64 @@ export default function DashboardPage() {
       if (!response.ok) {
         throw new Error('Failed to send quick reply');
       }
+
+      // Reload inbox after successful reply
+      await loadInbox();
     } catch (error) {
       console.error('Error sending quick reply:', error);
+      throw error;
+    }
+  };
+
+  const handleIgnore = async (itemType: string, sourceId: string) => {
+    if (!profile) return;
+
+    try {
+      const response = await fetch('/api/messages/ignore', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: profile.id,
+          itemType,
+          sourceId,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to ignore message');
+      }
+
+      // Reload inbox after ignoring
+      await loadInbox();
+    } catch (error) {
+      console.error('Error ignoring message:', error);
+      throw error;
+    }
+  };
+
+  const handleAddToPending = async (itemType: string, sourceId: string, aiSuggestion: string) => {
+    if (!profile) return;
+
+    try {
+      const response = await fetch('/api/messages/add-to-pending', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: profile.id,
+          itemType,
+          sourceId,
+          aiSuggestion,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to add to pending');
+      }
+
+      // Reload inbox after adding to pending
+      await loadInbox();
+    } catch (error) {
+      console.error('Error adding to pending:', error);
       throw error;
     }
   };
@@ -467,25 +524,36 @@ export default function DashboardPage() {
           />
         </div>
 
-        {/* Recent Activity Preview */}
+        {/* Unanswered Messages - Simple & Focused */}
         <div className="bg-white rounded-lg shadow-sm p-6">
           <div className="flex items-center justify-between mb-6">
-            <h2 className="text-xl font-bold text-gray-900">Recent Activity</h2>
+            <div>
+              <h2 className="text-xl font-bold text-gray-900">Messages to Answer</h2>
+              <p className="text-sm text-gray-600 mt-1">
+                {stats.unanswered > 0
+                  ? `${stats.unanswered} message${stats.unanswered !== 1 ? 's' : ''} waiting for your response`
+                  : 'All caught up!'}
+              </p>
+            </div>
             <Link
               href="/dashboard/messages"
               className="flex items-center space-x-1 text-purple-600 hover:text-purple-700 font-medium"
             >
-              <span>View All</span>
+              <span>View All Messages</span>
               <ArrowRight className="h-4 w-4" />
             </Link>
           </div>
 
           {inboxItems.length === 0 ? (
             <div className="text-center py-12">
-              <MessageSquare className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">No messages yet</h3>
+              <CheckCircle className="h-16 w-16 text-green-400 mx-auto mb-4" />
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                {stats.unanswered === 0 ? 'All caught up!' : 'No messages yet'}
+              </h3>
               <p className="text-gray-500 mb-6">
-                {profile?.instagram_connected
+                {stats.unanswered === 0
+                  ? 'You have no unanswered messages. Great work!'
+                  : profile?.instagram_connected
                   ? 'Click "Sync Messages" to fetch your Instagram DMs and comments'
                   : 'Connect your Instagram account to start receiving messages'}
               </p>
@@ -499,6 +567,8 @@ export default function DashboardPage() {
                   onApprove={handleApprove}
                   onReject={handleReject}
                   onQuickReply={handleQuickReply}
+                  onIgnore={handleIgnore}
+                  onAddToPending={handleAddToPending}
                   onRefresh={loadInbox}
                 />
               ))}

@@ -432,6 +432,82 @@ export default function MessagesPage() {
     }
   };
 
+  const handleIgnore = async (itemType: string, sourceId: string) => {
+    if (!profile) return;
+
+    const item = allItems.find((i) => i.source_id === sourceId);
+
+    try {
+      // OPTIMISTIC UPDATE: Remove from view immediately
+      if (item) {
+        removeItem(profile.id, item.id);
+        setAllItems((prev) => prev.filter((i) => i.id !== item.id));
+      }
+
+      const response = await fetch('/api/messages/ignore', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: profile.id,
+          itemType,
+          sourceId,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to ignore message');
+      }
+    } catch (error) {
+      console.error('Error ignoring message:', error);
+      // Revert optimistic update on error
+      await loadInbox(true);
+      throw error;
+    }
+  };
+
+  const handleAddToPending = async (itemType: string, sourceId: string, aiSuggestion: string) => {
+    if (!profile) return;
+
+    const item = allItems.find((i) => i.source_id === sourceId);
+
+    try {
+      // OPTIMISTIC UPDATE: Convert to pending_approval type
+      if (item) {
+        const updatedItem = {
+          ...item,
+          type: 'pending_approval' as const,
+        };
+        updateItem(profile.id, item.id, updatedItem);
+        setAllItems((prev) =>
+          prev.map((i) => (i.id === item.id ? updatedItem : i))
+        );
+      }
+
+      const response = await fetch('/api/messages/add-to-pending', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: profile.id,
+          itemType,
+          sourceId,
+          aiSuggestion,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to add to pending');
+      }
+
+      // Refresh to get updated queue item
+      await loadInbox(true);
+    } catch (error) {
+      console.error('Error adding to pending:', error);
+      // Revert optimistic update on error
+      await loadInbox(true);
+      throw error;
+    }
+  };
+
   const handleLogout = async () => {
     await supabase.auth.signOut();
     router.push('/');
@@ -646,6 +722,8 @@ export default function MessagesPage() {
                   onApprove={handleApprove}
                   onReject={handleReject}
                   onQuickReply={handleQuickReply}
+                  onIgnore={handleIgnore}
+                  onAddToPending={handleAddToPending}
                   onRefresh={loadInbox}
                 />
               ))}

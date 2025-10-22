@@ -36,11 +36,12 @@ export async function GET(request: NextRequest) {
 
     const items: UnifiedInboxItem[] = [];
 
-    // 1. Fetch Instagram DMs
+    // 1. Fetch Instagram DMs (exclude archived messages)
     const { data: messages } = await supabaseAdmin
       .from('instagram_messages')
       .select('*')
       .eq('user_id', userId)
+      .is('archived_at', null)
       .order('timestamp', { ascending: false });
 
     if (messages) {
@@ -69,11 +70,12 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 2. Fetch Instagram Comments
+    // 2. Fetch Instagram Comments (exclude archived comments)
     const { data: comments } = await supabaseAdmin
       .from('instagram_comments')
       .select('*')
       .eq('user_id', userId)
+      .is('archived_at', null)
       .order('timestamp', { ascending: false });
 
     if (comments) {
