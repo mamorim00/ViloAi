@@ -36,7 +36,13 @@ export default function SignupPage() {
         },
       });
 
-      if (error) throw error;
+      if (error) {
+        // Handle specific error cases
+        if (error.message.includes('already registered') || error.message.includes('already exists')) {
+          throw new Error('This email is already registered. Please login instead or use a different email.');
+        }
+        throw error;
+      }
 
       if (data.user) {
         // Wait a moment for the trigger to create the profile
@@ -102,7 +108,12 @@ export default function SignupPage() {
 
         {error && (
           <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-4">
-            {error}
+            <p>{error}</p>
+            {error.includes('already registered') && (
+              <Link href="/login" className="text-red-800 hover:text-red-900 font-semibold underline mt-2 inline-block">
+                Go to Login →
+              </Link>
+            )}
           </div>
         )}
 

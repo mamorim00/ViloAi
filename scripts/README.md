@@ -1,8 +1,48 @@
-# Database Reset Scripts
+# Database & User Management Scripts
 
-⚠️ **WARNING**: These scripts will **DELETE ALL DATA** from your database including users, messages, subscriptions, and authentication. Use only for testing purposes!
+⚠️ **WARNING**: These scripts will **DELETE DATA** from your database. Use only for testing purposes!
 
 ## Available Scripts
+
+### 0. Delete Single User (Quick Fix for "Email Already Registered")
+
+**File:** `delete-user.js`
+
+**Usage:**
+```bash
+node scripts/delete-user.js email@example.com
+```
+
+**What it does:**
+- Finds user by email
+- Deletes user's profile from database
+- Deletes user from auth.users
+- Allows you to re-register with same email
+
+**When to use:**
+- Getting "Database error finding user" or "Email already registered"
+- Want to test signup with same email again
+- Need to delete a specific test account
+
+**Example:**
+```bash
+$ node scripts/delete-user.js test@example.com
+🔍 Looking for user: test@example.com
+
+✓ Found user:
+   Email: test@example.com
+   ID: 123e4567-e89b-12d3-a456-426614174000
+   Created: 10/22/2025, 3:45:00 PM
+
+🗑️  Deleting profile...
+✓ Profile deleted
+🗑️  Deleting user from auth...
+
+✅ User deleted successfully!
+   Email: test@example.com
+
+You can now sign up with this email again.
+```
 
 ### 1. SQL Script (Supabase SQL Editor)
 
