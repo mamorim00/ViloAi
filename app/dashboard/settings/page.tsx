@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase/client';
 import { BusinessRule, RuleType, AutoReplySettings, Profile } from '@/lib/types';
-import { ArrowLeft, Plus, Trash2, Edit2, Save, X, Zap, MessageSquare, AlertTriangle, CreditCard, ArrowUpCircle } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, Edit2, Save, X, Zap, MessageSquare, AlertTriangle, CreditCard, ArrowUpCircle, Download, Shield } from 'lucide-react';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import LanguageToggle from '@/components/LanguageToggle';
 
@@ -28,6 +28,8 @@ export default function SettingsPage() {
   });
   const [userId, setUserId] = useState<string | null>(null);
   const [clearing, setClearing] = useState(false);
+  const [exportingData, setExportingData] = useState(false);
+  const [deletingAccount, setDeletingAccount] = useState(false);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [subscriptionPlans, setSubscriptionPlans] = useState<any[]>([]);
   const [loadingBillingPortal, setLoadingBillingPortal] = useState(false);
@@ -311,6 +313,107 @@ export default function SettingsPage() {
       alert('Failed to clear messages. Please try again.');
     } finally {
       setClearing(false);
+    }
+  };
+
+  const handleExportData = async () => {
+    if (!userId) return;
+
+    setExportingData(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        alert('Session expired. Please log in again.');
+        return;
+      }
+
+      const response = await fetch('/api/gdpr/export-data', {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+      });
+
+      if (response.ok) {
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `viloai-data-export-${Date.now()}.json`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+        alert('Your data has been exported successfully!');
+      } else {
+        alert('Failed to export data. Please try again.');
+      }
+    } catch (error) {
+      console.error('Error exporting data:', error);
+      alert('Failed to export data. Please try again.');
+    } finally {
+      setExportingData(false);
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    if (!userId) return;
+
+    const confirmation1 = confirm(
+      '⚠️ WARNING: This will PERMANENTLY delete your account and ALL data.\n\n' +
+      'This includes:\n' +
+      '• Your profile and account\n' +
+      '• All Instagram messages and comments\n' +
+      '• All analytics and insights\n' +
+      '• All automation rules and settings\n\n' +
+      'This action CANNOT be undone.\n\n' +
+      'Are you absolutely sure you want to delete your account?'
+    );
+
+    if (!confirmation1) return;
+
+    const confirmation2 = confirm(
+      '⚠️ FINAL WARNING ⚠️\n\n' +
+      'You are about to permanently delete your account.\n\n' +
+      'Type "DELETE" in the next dialog to confirm.'
+    );
+
+    if (!confirmation2) return;
+
+    const userInput = prompt('Type DELETE (in capital letters) to confirm account deletion:');
+
+    if (userInput !== 'DELETE') {
+      alert('Account deletion cancelled. The text did not match.');
+      return;
+    }
+
+    setDeletingAccount(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        alert('Session expired. Please log in again.');
+        return;
+      }
+
+      const response = await fetch('/api/gdpr/delete-account', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+      });
+
+      if (response.ok) {
+        alert('Your account has been permanently deleted. You will now be logged out.');
+        await supabase.auth.signOut();
+        router.push('/');
+      } else {
+        const data = await response.json();
+        alert(`Failed to delete account: ${data.error || 'Please try again.'}`);
+      }
+    } catch (error) {
+      console.error('Error deleting account:', error);
+      alert('Failed to delete account. Please contact support.');
+    } finally {
+      setDeletingAccount(false);
     }
   };
 
@@ -634,31 +737,117 @@ export default function SettingsPage() {
           />
         </div>
 
+        {/* GDPR / Privacy Rights */}
+        <div className="bg-blue-50 border-2 border-blue-200 rounded-lg shadow-md p-6 mt-8">
+          <div className="flex items-center mb-4">
+            <Shield className="h-6 w-6 text-blue-600 mr-2" />
+            <h2 className="text-xl font-bold text-blue-900">Privacy & Data Rights (GDPR)</h2>
+          </div>
+          <p className="text-blue-800 mb-6">
+            Under GDPR, you have the right to access, export, and delete your personal data. These tools help you exercise those rights.
+          </p>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Export Data */}
+            <div className="bg-white rounded-lg p-5 border border-blue-200">
+              <h3 className="font-semibold text-gray-900 mb-2 flex items-center">
+                <Download className="h-5 w-5 mr-2 text-blue-600" />
+                Export Your Data
+              </h3>
+              <p className="text-sm text-gray-600 mb-4">
+                Download all your personal data in JSON format. This includes your profile, messages, analytics, and settings.
+                <strong className="block mt-2 text-blue-800">Right to Data Portability (GDPR Article 20)</strong>
+              </p>
+              <button
+                onClick={handleExportData}
+                disabled={exportingData}
+                className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed font-semibold"
+              >
+                <Download className="h-4 w-4" />
+                <span>{exportingData ? 'Exporting...' : 'Export Data'}</span>
+              </button>
+            </div>
+
+            {/* Privacy Policy */}
+            <div className="bg-white rounded-lg p-5 border border-blue-200">
+              <h3 className="font-semibold text-gray-900 mb-2 flex items-center">
+                <Shield className="h-5 w-5 mr-2 text-blue-600" />
+                Privacy Information
+              </h3>
+              <p className="text-sm text-gray-600 mb-4">
+                Review our Privacy Policy and Terms of Service to understand how we handle your data.
+              </p>
+              <div className="space-y-2">
+                <Link
+                  href="/privacy"
+                  className="block text-blue-600 hover:text-blue-700 text-sm font-medium"
+                >
+                  → Privacy Policy
+                </Link>
+                <Link
+                  href="/terms"
+                  className="block text-blue-600 hover:text-blue-700 text-sm font-medium"
+                >
+                  → Terms of Service
+                </Link>
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* Danger Zone */}
         <div className="bg-red-50 border-2 border-red-200 rounded-lg shadow-md p-6 mt-8">
           <div className="flex items-center mb-4">
             <AlertTriangle className="h-6 w-6 text-red-600 mr-2" />
             <h2 className="text-xl font-bold text-red-900">Danger Zone</h2>
           </div>
-          <p className="text-red-800 mb-4">
+          <p className="text-red-800 mb-6">
             Careful! Actions in this section are permanent and cannot be undone.
           </p>
 
-          <div className="bg-white rounded-lg p-5 border border-red-200">
-            <h3 className="font-semibold text-gray-900 mb-2">Clear All Messages</h3>
-            <p className="text-sm text-gray-600 mb-4">
-              This will permanently delete all DMs, comments, and pending approvals from your database.
-              After clearing, when you sync messages, only <strong>new messages</strong> received after this point will appear.
-              Old messages will not be re-synced.
-            </p>
-            <button
-              onClick={handleClearMessages}
-              disabled={clearing}
-              className="flex items-center space-x-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed font-semibold"
-            >
-              <Trash2 className="h-4 w-4" />
-              <span>{clearing ? 'Clearing...' : 'Clear All Messages'}</span>
-            </button>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Clear Messages */}
+            <div className="bg-white rounded-lg p-5 border border-red-200">
+              <h3 className="font-semibold text-gray-900 mb-2">Clear All Messages</h3>
+              <p className="text-sm text-gray-600 mb-4">
+                This will permanently delete all DMs, comments, and pending approvals from your database.
+                After clearing, when you sync messages, only <strong>new messages</strong> received after this point will appear.
+                Old messages will not be re-synced.
+              </p>
+              <button
+                onClick={handleClearMessages}
+                disabled={clearing}
+                className="flex items-center space-x-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed font-semibold"
+              >
+                <Trash2 className="h-4 w-4" />
+                <span>{clearing ? 'Clearing...' : 'Clear All Messages'}</span>
+              </button>
+            </div>
+
+            {/* Delete Account */}
+            <div className="bg-white rounded-lg p-5 border border-red-200">
+              <h3 className="font-semibold text-red-900 mb-2">Delete Account Permanently</h3>
+              <p className="text-sm text-gray-600 mb-2">
+                Permanently delete your account and ALL associated data. This includes:
+              </p>
+              <ul className="text-xs text-gray-600 mb-4 list-disc list-inside space-y-1">
+                <li>Profile and account</li>
+                <li>All messages and comments</li>
+                <li>All analytics and insights</li>
+                <li>All automation rules</li>
+              </ul>
+              <p className="text-sm text-red-800 mb-4">
+                <strong>Right to Erasure (GDPR Article 17)</strong>
+              </p>
+              <button
+                onClick={handleDeleteAccount}
+                disabled={deletingAccount}
+                className="flex items-center space-x-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed font-semibold"
+              >
+                <Trash2 className="h-4 w-4" />
+                <span>{deletingAccount ? 'Deleting...' : 'Delete Account'}</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>
