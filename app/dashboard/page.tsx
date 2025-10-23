@@ -62,21 +62,48 @@ export default function DashboardPage() {
 
         const { data: profileData } = await supabase
           .from('profiles')
-          .select('subscription_plan_id, subscription_status')
+          .select('subscription_plan_id, subscription_status, subscription_tier')
           .eq('id', user.id)
           .single();
+
+        console.log(`🔍 Poll ${pollCount}: Subscription check:`, {
+          plan_id: profileData?.subscription_plan_id,
+          status: profileData?.subscription_status,
+          tier: profileData?.subscription_tier,
+        });
 
         // If subscription is active, stop polling and refresh profile
         if (profileData?.subscription_plan_id && profileData?.subscription_status === 'active') {
           clearInterval(pollInterval);
           console.log('✅ Subscription detected! Refreshing profile...');
+          console.log('📊 Full profile data:', profileData);
           await checkUser();
         }
 
-        // Stop after 10 polls (20 seconds)
+        // After 10 polls (20 seconds), try manual sync from Stripe
         if (pollCount >= 10) {
           clearInterval(pollInterval);
-          console.log('⏱️ Subscription poll timeout. Manual refresh may be needed.');
+          console.log('⏱️ Webhook not detected. Attempting manual sync from Stripe...');
+
+          try {
+            const syncResponse = await fetch('/api/stripe/sync-subscription', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ userId: user.id }),
+            });
+
+            if (syncResponse.ok) {
+              const syncData = await syncResponse.json();
+              if (syncData.success) {
+                console.log('✅ Manual sync successful:', syncData.subscription);
+                await checkUser();
+              } else {
+                console.log('⚠️ Manual sync found no active subscription');
+              }
+            }
+          } catch (error) {
+            console.error('Error during manual sync:', error);
+          }
         }
       }, 2000);
 
@@ -379,11 +406,50 @@ export default function DashboardPage() {
           new URLSearchParams(window.location.search).get('subscription') === 'success' && (
             <div className="bg-green-50 border border-green-200 rounded-lg p-6 mb-8">
               <h2 className="text-xl font-bold text-green-900 mb-2">
-                {t.subscription.activated || 'Subscription Activated!'}
+                {t.subscription?.activated || 'Subscription Activated!'}
               </h2>
               <p className="text-green-700">
-                {t.subscription.activatedMessage ||
+                {t.subscription?.activatedMessage ||
                   'Your subscription has been successfully activated. You can now start using ViloAi!'}
+              </p>
+            </div>
+          )}
+
+        {/* Subscription Updated Message */}
+        {typeof window !== 'undefined' &&
+          new URLSearchParams(window.location.search).get('subscription') === 'updated' && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 mb-8">
+              <h2 className="text-xl font-bold text-blue-900 mb-2">
+                Subscription Updated!
+              </h2>
+              <p className="text-blue-700">
+                Your subscription plan has been successfully changed. The changes are now active.
+              </p>
+            </div>
+          )}
+
+        {/* Subscription Already Active Message */}
+        {typeof window !== 'undefined' &&
+          new URLSearchParams(window.location.search).get('subscription') === 'already-active' && (
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6 mb-8">
+              <h2 className="text-xl font-bold text-yellow-900 mb-2">
+                Already Subscribed
+              </h2>
+              <p className="text-yellow-700">
+                You&apos;re already subscribed to this plan. Use the &quot;Manage Subscription&quot; button in Settings to make changes.
+              </p>
+            </div>
+          )}
+
+        {/* Subscription Cancelled Message */}
+        {typeof window !== 'undefined' &&
+          new URLSearchParams(window.location.search).get('subscription') === 'cancelled' && (
+            <div className="bg-gray-50 border border-gray-200 rounded-lg p-6 mb-8">
+              <h2 className="text-xl font-bold text-gray-900 mb-2">
+                Checkout Cancelled
+              </h2>
+              <p className="text-gray-700">
+                Your checkout was cancelled. No charges were made. You can try again anytime from the Settings page.
               </p>
             </div>
           )}

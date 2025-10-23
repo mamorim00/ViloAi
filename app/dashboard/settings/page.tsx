@@ -4,8 +4,8 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase/client';
-import { BusinessRule, RuleType, AutoReplySettings } from '@/lib/types';
-import { ArrowLeft, Plus, Trash2, Edit2, Save, X, Zap, MessageSquare, AlertTriangle } from 'lucide-react';
+import { BusinessRule, RuleType, AutoReplySettings, Profile } from '@/lib/types';
+import { ArrowLeft, Plus, Trash2, Edit2, Save, X, Zap, MessageSquare, AlertTriangle, CreditCard, ArrowUpCircle } from 'lucide-react';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import LanguageToggle from '@/components/LanguageToggle';
 
@@ -28,6 +28,9 @@ export default function SettingsPage() {
   });
   const [userId, setUserId] = useState<string | null>(null);
   const [clearing, setClearing] = useState(false);
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [subscriptionPlans, setSubscriptionPlans] = useState<any[]>([]);
+  const [loadingBillingPortal, setLoadingBillingPortal] = useState(false);
 
   useEffect(() => {
     checkAuth();
@@ -41,6 +44,90 @@ export default function SettingsPage() {
       setUserId(user.id);
       loadRules();
       loadAutoReplySettings(user.id);
+      loadProfile(user.id);
+      loadSubscriptionPlans();
+    }
+  };
+
+  const loadProfile = async (uid: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', uid)
+        .single();
+
+      if (!error && data) {
+        setProfile(data);
+      }
+    } catch (error) {
+      console.error('Error loading profile:', error);
+    }
+  };
+
+  const loadSubscriptionPlans = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('subscription_plans')
+        .select('*')
+        .order('price_monthly', { ascending: true });
+
+      if (!error && data) {
+        setSubscriptionPlans(data);
+      }
+    } catch (error) {
+      console.error('Error loading subscription plans:', error);
+    }
+  };
+
+  const handleManageSubscription = async () => {
+    if (!userId) return;
+
+    setLoadingBillingPortal(true);
+    try {
+      const response = await fetch('/api/stripe/billing-portal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId }),
+      });
+
+      if (response.ok) {
+        const { url } = await response.json();
+        window.location.href = url;
+      } else {
+        alert('Failed to open billing portal. Please try again.');
+      }
+    } catch (error) {
+      console.error('Error opening billing portal:', error);
+      alert('Failed to open billing portal. Please try again.');
+    } finally {
+      setLoadingBillingPortal(false);
+    }
+  };
+
+  const handleUpgrade = async (planId: string) => {
+    if (!userId) return;
+
+    setLoadingBillingPortal(true);
+    try {
+      const response = await fetch('/api/stripe/create-checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, planId }),
+      });
+
+      if (response.ok) {
+        const { url } = await response.json();
+        window.location.href = url;
+      } else {
+        const errorData = await response.json();
+        alert(`Failed to process subscription change: ${errorData.error || 'Please try again.'}`);
+      }
+    } catch (error) {
+      console.error('Error processing subscription change:', error);
+      alert('Failed to process subscription change. Please try again.');
+    } finally {
+      setLoadingBillingPortal(false);
     }
   };
 
@@ -255,6 +342,104 @@ export default function SettingsPage() {
             {t.settings.subtitle}
           </p>
         </div>
+
+        {/* Subscription Management */}
+        {profile && (
+          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg shadow-md p-6 mb-8 border border-blue-100">
+            <div className="flex items-center mb-4">
+              <CreditCard className="h-6 w-6 text-blue-600 mr-2" />
+              <h2 className="text-xl font-bold text-gray-900">Subscription & Billing</h2>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Current Plan */}
+              <div className="bg-white rounded-lg p-5 border border-gray-200 shadow-sm">
+                <h3 className="font-semibold text-gray-900 mb-3">Current Plan</h3>
+                <div className="space-y-2">
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Plan:</span>
+                    <span className="font-bold text-gray-900 capitalize">
+                      {profile.subscription_tier || 'Free'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Status:</span>
+                    <span className={`font-semibold capitalize ${
+                      profile.subscription_status === 'active' ? 'text-green-600' :
+                      profile.subscription_status === 'past_due' ? 'text-red-600' :
+                      'text-gray-600'
+                    }`}>
+                      {profile.subscription_status || 'inactive'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Messages this month:</span>
+                    <span className="font-semibold text-gray-900">
+                      {profile.monthly_message_count || 0}
+                    </span>
+                  </div>
+                </div>
+
+                {profile.stripe_customer_id && profile.subscription_tier !== 'free' && (
+                  <button
+                    onClick={handleManageSubscription}
+                    disabled={loadingBillingPortal}
+                    className="w-full mt-4 flex items-center justify-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 font-semibold"
+                  >
+                    <CreditCard className="h-4 w-4" />
+                    <span>{loadingBillingPortal ? 'Loading...' : 'Manage Subscription'}</span>
+                  </button>
+                )}
+              </div>
+
+              {/* Upgrade Options */}
+              <div className="bg-white rounded-lg p-5 border border-gray-200 shadow-sm">
+                <h3 className="font-semibold text-gray-900 mb-3">Upgrade Your Plan</h3>
+                <div className="space-y-3">
+                  {subscriptionPlans
+                    .filter(plan => {
+                      const currentPlanIndex = subscriptionPlans.findIndex(p => p.name === profile.subscription_tier);
+                      const thisPlanIndex = subscriptionPlans.findIndex(p => p.id === plan.id);
+                      return thisPlanIndex > currentPlanIndex;
+                    })
+                    .map(plan => (
+                      <div key={plan.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200">
+                        <div>
+                          <p className="font-semibold text-gray-900 capitalize">{plan.name}</p>
+                          <p className="text-sm text-gray-600">
+                            {plan.price_monthly === 0 ? 'Free' : `€${plan.price_monthly}/month`}
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => handleUpgrade(plan.id)}
+                          className="flex items-center space-x-1 px-3 py-1.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-sm font-semibold"
+                        >
+                          <ArrowUpCircle className="h-4 w-4" />
+                          <span>Upgrade</span>
+                        </button>
+                      </div>
+                    ))}
+                  {subscriptionPlans.filter(plan => {
+                    const currentPlanIndex = subscriptionPlans.findIndex(p => p.name === profile.subscription_tier);
+                    const thisPlanIndex = subscriptionPlans.findIndex(p => p.id === plan.id);
+                    return thisPlanIndex > currentPlanIndex;
+                  }).length === 0 && (
+                    <p className="text-gray-500 text-center py-4">
+                      You&apos;re on the highest plan! 🎉
+                    </p>
+                  )}
+                </div>
+
+                <div className="mt-4 bg-blue-50 border border-blue-200 rounded-lg p-3">
+                  <p className="text-xs text-blue-800">
+                    <strong>Note:</strong> When you upgrade, your old subscription will be automatically canceled
+                    and replaced with the new plan. You&apos;ll only have one active subscription.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Auto-Reply Settings */}
         <div className="bg-gradient-to-r from-purple-50 to-pink-50 rounded-lg shadow-md p-6 mb-8 border border-purple-100">

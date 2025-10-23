@@ -65,8 +65,16 @@ export default function UnifiedInboxItemComponent({
           setAiSuggestionFi(data.analysis.suggestedReplyFi);
           setAiSuggestionEn(data.analysis.suggestedReplyEn);
           setEditedReply(data.analysis.suggestedReplyFi || data.analysis.suggestedReplyEn || '');
-          console.log(`✅ Lazy-loaded AI analysis for ${item.type}: ${item.source_id} ${data.cached ? '(cached)' : ''}`);
+          console.log(`✅ Lazy-loaded AI analysis for ${item.type}: ${item.source_id} ${data.cached ? '(cached)' : ''}`, {
+            detectedLanguage: data.analysis.detectedLanguage,
+            hasFinnish: !!data.analysis.suggestedReplyFi,
+            hasEnglish: !!data.analysis.suggestedReplyEn,
+            finnishText: data.analysis.suggestedReplyFi?.substring(0, 50),
+            englishText: data.analysis.suggestedReplyEn?.substring(0, 50),
+          });
         }
+      } else {
+        console.error(`❌ Failed to load AI analysis:`, await response.text());
       }
     } catch (error) {
       console.error('Error loading AI analysis:', error);
@@ -79,10 +87,22 @@ export default function UnifiedInboxItemComponent({
   const typeLabel = item.type === 'dm' ? 'DM' : item.type === 'comment' ? 'Comment' : 'Pending Approval';
   const typeColor = item.type === 'dm' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800';
 
+  // Detect language from message text if not set
+  const detectLanguage = (text: string): 'fi' | 'en' => {
+    // Check for Finnish characters (ä, ö, å)
+    const hasFinnishChars = /[äöåÄÖÅ]/.test(text);
+    // Check for common Finnish words
+    const finnishWords = /\b(mitä|mikä|missä|miten|kuka|milloin|hinta|saatavilla|kiitos|ole|hyvä)\b/i.test(text);
+    return (hasFinnishChars || finnishWords) ? 'fi' : 'en';
+  };
+
+  const detectedLang = item.detected_language || detectLanguage(item.message_text);
+
   // Use lazy-loaded AI suggestion or fallback to item's original suggestion
-  const aiSuggestion = item.detected_language === 'fi'
-    ? (aiSuggestionFi || item.ai_suggestion_fi)
-    : (aiSuggestionEn || item.ai_suggestion_en);
+  // Prioritize the language-specific suggestion, fallback to either language if one is missing
+  const aiSuggestion = detectedLang === 'fi'
+    ? (aiSuggestionFi || item.ai_suggestion_fi || aiSuggestionEn || item.ai_suggestion_en)
+    : (aiSuggestionEn || item.ai_suggestion_en || aiSuggestionFi || item.ai_suggestion_fi);
 
   const handleApprove = async () => {
     if (!item.queue_item_id || processing) return;
@@ -272,7 +292,7 @@ export default function UnifiedInboxItemComponent({
         <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 mb-3">
           <div className="flex items-center justify-between mb-1">
             <p className="text-xs font-medium text-purple-700">
-              AI Suggestion ({item.detected_language === 'fi' ? 'Finnish' : 'English'}):
+              AI Suggestion ({detectedLang === 'fi' ? 'Finnish' : 'English'}):
             </p>
             {intentConfidence && (
               <span className="text-xs text-purple-600">

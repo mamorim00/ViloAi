@@ -31,14 +31,23 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Detect language from AI suggestion
+    const detectedLanguage = aiSuggestion.match(/[äöåÄÖÅ]/) ? 'fi' : 'en';
+
     // Add to auto_reply_queue
+    // Note: message_id is used for BOTH DMs and comments (it's the Instagram item ID)
     const { error: queueError } = await supabaseAdmin
       .from('auto_reply_queue')
       .insert({
         user_id: userId,
-        message_id: itemType === 'dm' ? sourceId : null,
-        comment_id: itemType === 'comment' ? sourceId : null,
+        message_type: itemType === 'comment' ? 'comment' : 'dm',
+        message_id: sourceId, // Instagram ID (same field for both DMs and comments)
+        message_text: item.message_text || item.comment_text || '',
+        sender_username: item.sender_username || '',
+        sender_id: item.sender_id || '',
+        conversation_id: item.conversation_id || null, // Only DMs have this
         suggested_reply: aiSuggestion,
+        detected_language: detectedLanguage,
         status: 'pending',
         created_at: new Date().toISOString(),
       });

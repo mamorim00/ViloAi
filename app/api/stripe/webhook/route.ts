@@ -86,11 +86,21 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
 
   const customerId = session.customer as string;
   const subscriptionId = session.subscription as string;
-  const userId = session.metadata?.userId;
+  let userId = session.metadata?.userId;
 
   if (!subscriptionId) {
     console.error('❌ No subscription ID in checkout session');
     return;
+  }
+
+  // If userId not in session metadata, try to get it from customer metadata
+  if (!userId) {
+    console.log('🔍 No userId in session metadata, checking customer metadata...');
+    const customer = await stripe.customers.retrieve(customerId);
+    if (customer && !customer.deleted && customer.metadata?.userId) {
+      userId = customer.metadata.userId;
+      console.log('✅ Found userId in customer metadata:', userId);
+    }
   }
 
   // Get subscription details
@@ -112,6 +122,16 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
 
   if (planError || !plan) {
     console.error('❌ Plan not found for price ID:', priceId, planError);
+
+    // Debug: Show all available plans and their price IDs
+    const { data: allPlans } = await supabaseAdmin
+      .from('subscription_plans')
+      .select('name, stripe_price_id, price_monthly');
+
+    console.error('📋 Available plans in database:', allPlans);
+    console.error('🔍 Looking for price_id:', priceId);
+    console.error('⚠️ ACTION REQUIRED: Update subscription_plans table with correct Stripe Price IDs');
+    console.error('💡 See UPDATE_STRIPE_PRICE_IDS.sql for instructions');
     return;
   }
 
@@ -161,37 +181,60 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
 
 async function handleSubscriptionUpdated(subscription: Stripe.Subscription) {
   console.log('🔄 Subscription updated:', subscription.id);
+  console.log('📊 Update details:', {
+    status: subscription.status,
+    cancel_at_period_end: subscription.cancel_at_period_end,
+    current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
+  });
 
   const customerId = subscription.customer as string;
   const priceId = subscription.items.data[0].price.id;
 
   // Find the plan by Stripe price ID
-  const { data: plan } = await supabaseAdmin
+  const { data: plan, error: planError } = await supabaseAdmin
     .from('subscription_plans')
     .select('*')
     .eq('stripe_price_id', priceId)
     .single();
 
-  if (!plan) {
-    console.error('Plan not found for price ID:', priceId);
+  if (planError || !plan) {
+    console.error('❌ Plan not found for price ID:', priceId, planError);
+
+    // Debug: Show all available plans and their price IDs
+    const { data: allPlans } = await supabaseAdmin
+      .from('subscription_plans')
+      .select('name, stripe_price_id, price_monthly');
+
+    console.error('📋 Available plans in database:', allPlans);
+    console.error('🔍 Looking for price_id:', priceId);
     return;
   }
 
-  // Update user profile with new subscription status
+  console.log('📦 Found plan:', { id: plan.id, name: plan.name });
+
+  // Update user profile with new subscription details
+  const updateData: any = {
+    subscription_plan_id: plan.id,
+    subscription_status: subscription.status,
+    subscription_tier: plan.name,
+    updated_at: new Date().toISOString(),
+  };
+
+  // If subscription is active, ensure message count is tracked
+  if (subscription.status === 'active') {
+    // Don't reset message count here - only on successful payment
+    console.log('✅ Subscription is active, maintaining current message count');
+  }
+
   const { error } = await supabaseAdmin
     .from('profiles')
-    .update({
-      subscription_plan_id: plan.id,
-      subscription_status: subscription.status,
-      subscription_tier: plan.name,
-      updated_at: new Date().toISOString(),
-    })
+    .update(updateData)
     .eq('stripe_customer_id', customerId);
 
   if (error) {
-    console.error('Error updating subscription:', error);
+    console.error('❌ Error updating subscription:', error);
   } else {
-    console.log('✅ Subscription updated for customer:', customerId);
+    console.log('✅ Subscription updated for customer:', customerId, 'to plan:', plan.name);
   }
 }
 
